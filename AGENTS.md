@@ -1,27 +1,29 @@
-# Agent Guidelines for tokless
+# Agent Guidelines
 
 ## Communication
-- **Language**: Always respond to the user in Traditional Chinese (繁體中文). Keep prose concise and technical. Internal thinking, codebase docs, and commits remain in English for token efficiency.
+- Reply to user in Traditional Chinese (繁體中文): terse, technical.
+- Keep thinking, docs, comments, and commits in English to save tokens.
 
-## Critical Constraints (Host Isolation)
-- **NEVER disrupt host proxy**: Do NOT stop or restart the local proxy on port 8787. Never execute `tokless proxy down` or kill active proxy processes.
-- **NEVER mutate host installation**: Do NOT modify files under `AppData\Local\tokless` or `AppData\Local\Programs\tokless`. No self-updates or installers on host.
-- **Repo-only scope**: All changes, builds, and tests must remain strictly within this repository (`C:\Users\wuc656\Documents\tokless`).
+## Architecture & Scope
+- `cmd/tokless/`: CLI entrypoint, arg parsing, daemon flags (`__proxy-watch`, `__proxy-run`), console hiding.
+- `internal/core/`: Central `AgentManifest` and `ToolManifest` registries (no per-agent/tool branching in command handlers).
+- `internal/tools/`: Active tools (`rtk`, `headroom`, `codegraph`, `context-mode`). Note: `caveman`, `ponytail`, `principles`, and `projectmem` have been removed.
+- `internal/agents/`: Per-harness wiring, MCP adapters, shims, and BYOK routing across 16 agents (Claude, Codex, Antigravity, Copilot, Cursor, OpenCode, Cline, Droid, Grok, Kilo, Kimi, Pi, OMP, Amp, ZCode, DeepSeek).
+- `internal/headroom/`: Local proxy lifecycle (port 8787), BYOK gateway (port 18787), supervisor/watchdog, and OS autostart (`schtasks` / `launchd` / `systemd`).
+- `internal/commands/`: CLI commands (`init`, `doctor`, `update`, `disable`, `index`, `proxy`, `run-mcp`, `selfupdate`).
+- `internal/util/`: Config mutation (idempotent byte-stable JSONC/TOML), process execution, path resolution, unified instruction blocks.
 
-## Engineering Principles
-- **Simplicity First**: Minimal code to solve the issue. No speculative abstractions or unrequested features.
-- **Surgical Edits**: Touch only what is necessary. Match existing style. Clean only changes made by yourself.
-- **Goal-Driven Verification**: Verify with `go build ./...` and `go test` before reporting complete.
+## Host Isolation (Critical)
+- **No proxy disruption**: Never stop, restart, or kill the active proxy on port 8787 (`tokless proxy down`).
+- **No host mutation**: Never modify host installation directories (`%LOCALAPPDATA%\tokless`, `%LOCALAPPDATA%\Programs\tokless`) or live user harness configs (`~/.codex`, `~/.gemini`, etc.).
+- **Test isolation**: Always use `t.TempDir()`, `util.SetHomeOverride()`, and `TOKLESS_TEST=1` when testing config mutations or OS services/tasks.
 
-## Build & Test Workflow
-- Build: `go build ./...`
-- Release executable: `go build -ldflags="-s -w" -o dist/release/tokless-windows-x64.exe ./cmd/tokless`
-- Unit tests: `go test ./internal/headroom ./internal/util ./cmd/...`
+## Config & Platform Rules
+- **Idempotency**: Config writes must be byte-stable and preserve user key ordering via `internal/util` JSONC/TOML helpers.
+- **Windows compatibility**: `scripts/install.ps1` must remain strictly ASCII-only (PowerShell 5.1 safe). Background spawns must set `CREATE_NO_WINDOW` (`0x08000000`) / `HideWindow: true`.
 
-## Tools
-### Code Index (codegraph)
-- Query `codegraph_explore` for architecture, call graph, and symbol dependencies.
-
-### Context Tools (context-mode)
-- Use `ctx_execute` / `ctx_batch_execute` for large file parsing and sandbox analysis to minimize context usage.
-- Windows execution: `pwsh -NoProfile -Command`, absolute paths.
+## Workflow & Git
+- Build & Vet: `go build ./...` && `go vet ./...`
+- Release: `go build -trimpath -ldflags="-s -w" -o dist/release/tokless-windows-x64.exe ./cmd/tokless` (or `bash scripts/build-release.sh <tag>`)
+- Test: `go test ./...`
+- Git: All commits and tags must be signed (`git commit -S`, `git tag -s`) using the environment's configured signing method.

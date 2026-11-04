@@ -1,9 +1,9 @@
 # tokless installer for Windows (PowerShell 5.1+).
-#   irm https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.ps1 | iex
 
 
 $ErrorActionPreference = "Stop"
-$Owner = "HoangP8"
+$Owner = "wuc656"
 $Repo  = "tokless"
 
 $asset = "tokless-windows-x64.exe"

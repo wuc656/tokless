@@ -16,10 +16,10 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-const owner = "HoangP8"
+const owner = "wuc656"
 const repo = "tokless"
-const installSh = "https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.sh"
-const installPs1 = "https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.ps1"
+const installSh = "https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.sh"
+const installPs1 = "https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.ps1"
 const selfUpdateRuleWidth = 52
 
 func RunSelfUpdate() int {

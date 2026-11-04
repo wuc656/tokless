@@ -1099,7 +1099,19 @@ func codexProxySectionWithBearer(endpoint string) string {
 }
 
 func codexHasManagedHeadroomBlock(raw, endpoint string) bool {
-	return codexMarkedCurrentProxy(raw, endpoint) || codexUnmarkedCurrentProxy(raw, endpoint, codexByokFlavor(raw))
+	if codexMarkedCurrentProxy(raw, endpoint) || codexUnmarkedCurrentProxy(raw, endpoint, codexByokFlavor(raw)) {
+		return true
+	}
+	base := codexNamedProviderBaseURL(raw, "headroom")
+	if base == "" {
+		return false
+	}
+	for _, ep := range codexEndpointsFor(endpoint) {
+		if sameProxyBase(base, ep) {
+			return true
+		}
+	}
+	return false
 }
 
 func CodexProxyWired() bool {
@@ -1111,7 +1123,8 @@ func CodexProxyWired() bool {
 	if codexRootValue(raw, "model_provider") != "headroom" {
 		return false
 	}
-	if !codexIsManagedEndpoint(codexRootValue(raw, "openai_base_url")) {
+	openaiURL := codexRootValue(raw, "openai_base_url")
+	if openaiURL != "" && !codexIsManagedEndpoint(openaiURL) {
 		return false
 	}
 	return codexHasManagedHeadroomBlock(raw, endpoint)

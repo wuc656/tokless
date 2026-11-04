@@ -5,9 +5,9 @@
 
   One tool, no config — works the moment it lands.
 
-  [![version](https://img.shields.io/github/v/release/HoangP8/tokless?label=version)](https://github.com/HoangP8/tokless/releases)
-  [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/HoangP8/tokless)
-  [![license](https://img.shields.io/github/license/HoangP8/tokless)](https://github.com/HoangP8/tokless/blob/main/LICENSE)
+  [![version](https://img.shields.io/github/v/release/wuc656/tokless?label=version)](https://github.com/wuc656/tokless/releases)
+  [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/wuc656/tokless)
+  [![license](https://img.shields.io/github/license/wuc656/tokless)](https://github.com/wuc656/tokless/blob/main/LICENSE)
 
   <br />
 
@@ -64,13 +64,13 @@
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.sh | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.ps1 | iex
 ```
 
 Interactive install detects installed harnesses. First pick tools, then pick harnesses:
@@ -84,7 +84,7 @@ tokless --tools rtk,codegraph        # wire just these tools
 ### Copy this for your harness
 
 ```text
-https://raw.githubusercontent.com/HoangP8/tokless/main/docs/installation.md
+https://raw.githubusercontent.com/wuc656/tokless/main/docs/installation.md
 ```
 
 ## Tools

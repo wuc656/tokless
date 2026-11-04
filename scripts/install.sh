@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # tokless installer for macOS / Linux.
-#   curl -fsSL https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.sh | bash
 
 set -euo pipefail
 
-OWNER="HoangP8"
+OWNER="wuc656"
 REPO="tokless"
 DEST="${HOME}/.local/bin"
 

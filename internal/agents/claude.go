@@ -90,8 +90,6 @@ func claudeMcpToolNames(toolID string) []string {
 		return []string{"ctx_search", "ctx_execute", "ctx_execute_file", "ctx_batch_execute", "ctx_index", "ctx_fetch_and_index"}
 	case "codegraph":
 		return []string{"codegraph_explore"}
-	case "projectmem":
-		return ProjectmemMcpToolNames
 	}
 	return nil
 }

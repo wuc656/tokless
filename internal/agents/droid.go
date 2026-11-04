@@ -84,7 +84,6 @@ var droid = &core.AgentManifest{
 var droidEnabledTools = map[string][]string{
 	"codegraph":    CodegraphDroidToolNames,
 	"context-mode": ContextModeDroidToolNames,
-	"projectmem":   ProjectmemMcpToolNames,
 }
 
 func ConfigureDroidMcp(toolID string) (changed bool, file string) {
@@ -248,10 +247,6 @@ func DroidMcpBounded(toolID string) bool {
 	return ec == spawn.Command && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID])
 }
 
-// DroidProjectmemMcpBounded reports whether the projectmem MCP entry spawns through tokless.
-func DroidProjectmemMcpBounded() bool {
-	return DroidMcpBounded("projectmem")
-}
 
 // DroidMcpHas reports whether ~/.factory/mcp.json registers the tool.
 func DroidMcpHas(toolID string) bool {
@@ -282,10 +277,6 @@ var CodegraphDroidToolNames = []string{
 	"codegraph_explore",
 }
 
-// ProjectmemMcpToolNames is the projectmem allowlist shared by harness permissions and the bounded proxy.
-var ProjectmemMcpToolNames = []string{
-	"log_issue", "record_attempt", "record_fix", "add_decision", "add_note",
-}
 
 // --- hooks management ---
 
@@ -593,42 +584,6 @@ func HasDroidCodegraphIndexHook() bool {
 	return droidHasHook("SessionStart", "index --auto droid")
 }
 
-// --- projectmem SessionStart hook ---
-
-// InstallDroidProjectmemHook pushes project memory into each Droid session.
-func InstallDroidProjectmemHook() bool {
-	raw := droidRawHooks()
-	cfg := droidHooksLoad()
-	if cfg == nil {
-		return false
-	}
-	hookCfg := util.NewOrderedMap()
-	hookCfg.Set("type", "command")
-	projectmemCmd := toklessCommand("projectmem-hook", "claude")
-	if projectmemCmd == "" {
-		return false
-	}
-	hookCfg.Set("command", projectmemCmd)
-	hookCfg.Set("timeout", 15)
-	if !droidAddHookGroup(cfg, "SessionStart", "", []string{"projectmem-hook", "claude"}, hookCfg) {
-		return false
-	}
-	return droidHooksSave(cfg, raw) && HasDroidProjectmemHook()
-}
-
-func RemoveDroidProjectmemHook() {
-	raw := droidRawHooks()
-	cfg := droidHooksLoad()
-	if cfg == nil {
-		return
-	}
-	droidRemoveHookGroup(cfg, "SessionStart", "", "projectmem-hook", "claude")
-	droidHooksSave(cfg, raw)
-}
-
-func HasDroidProjectmemHook() bool {
-	return droidHasHook("SessionStart", "projectmem-hook claude")
-}
 
 // --- Context-Mode: MCP + AGENTS.md instruction only, no PreToolUse hook (agy pattern) ---
 

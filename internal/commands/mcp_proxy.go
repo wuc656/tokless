@@ -15,9 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/HoangP8/tokless/internal/agents"
-	"github.com/HoangP8/tokless/internal/tools"
 )
 
 // runMcpProxy spawns the MCP server as a child and proxies stdio.
@@ -67,18 +64,13 @@ var contextModeTools = []string{
 	"ctx_fetch_and_index",
 }
 
-var projectmemTools = agents.ProjectmemMcpToolNames
-
 var mcpToolPolicies = map[string][]string{
 	"context-mode": contextModeTools,
-	"projectmem":   projectmemTools,
 }
 
 // mcpInitializeInstructions returns the instructions override for a bounded proxy tool.
 func mcpInitializeInstructions(tool string) func() string {
 	switch tool {
-	case "projectmem":
-		return func() string { return tools.ProjectmemMcpInstructions }
 	case "context-mode":
 		return func() string { return "" }
 	default:

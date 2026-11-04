@@ -105,7 +105,7 @@ func helpText() string {
 }
 
 var agentSubset = []string{"claude", "opencode", "opencode2", "codex", "antigravity", "copilot", "droid", "grok", "pi", "omp", "kilo", "cline", "cursor", "amp", "kimi", "dsh", "zcode"}
-var toolSubset = []string{"rtk", "caveman", "codegraph", "context-mode", "headroom", "ponytail", "projectmem", "principles"}
+var toolSubset = []string{"rtk", "codegraph", "context-mode", "headroom"}
 
 // termWidth returns the terminal width in columns.
 func termWidth() int {
@@ -330,9 +330,6 @@ func run() int {
 		case "cursor":
 			return commands.RunRtkHookCursor()
 		}
-	}
-	if len(os.Args) >= 3 && os.Args[1] == "projectmem-hook" {
-		return commands.RunProjectmemHook(os.Args[2])
 	}
 	if len(os.Args) >= 3 && os.Args[1] == "grok-hook" && os.Args[2] == "session-start" {
 		return commands.RunGrokSessionStartHook()

@@ -79,20 +79,7 @@ func toolConfigLocation(agentID, toolID string) (path, key string) {
 		path = filepath.Join(util.Home(), ".dsh", "cordis.patch.yml")
 		key = "mcp_servers." + toolID
 	}
-	if toolID == "projectmem" {
-		switch agentID {
-		case "claude", "cursor", "antigravity", "copilot", "droid", "pi", "omp", "cline", "kimi":
-			key = "mcpServers.projectmem"
-		case "opencode", "kilo":
-			key = "mcp.projectmem"
-		case "codex", "grok", "dsh":
-			key = "mcp_servers.projectmem"
-		case "amp":
-			key = "amp.mcpServers.projectmem"
-		case "zcode":
-			key = "mcp.servers.projectmem"
-		}
-	}
+
 	return path, key
 }
 
@@ -173,7 +160,7 @@ func RunDoctor(offline, fix bool) int {
 	projectDir, isProject, projectErr := cursorProjectDir(false)
 	util.TreeCorner("Stats")
 	toolStats := doctorToolStats(projectDirOrCwd(), isProject)
-	toolIDs := []string{"headroom", "projectmem", "rtk", "codegraph", "context-mode"}
+	toolIDs := []string{"headroom", "rtk", "codegraph", "context-mode"}
 	printed := 0
 	for _, id := range toolIDs {
 		rows, ok := toolStats[id]
@@ -220,11 +207,7 @@ func RunDoctor(offline, fix bool) int {
 		} else {
 			util.TreeLeaf(statusWarn("CodeGraph index missing — run tokless index"))
 		}
-		if projectmemProjectStatus(projectDir) {
-			util.TreeLeaf(statusOK("projectmem .projectmem/ marker present"))
-		} else {
-			util.TreeLeaf(statusWarn("projectmem .projectmem/ marker missing"))
-		}
+
 	}
 	util.TreeClose()
 
@@ -401,9 +384,7 @@ func doctorProxyDetails(reports []agentReport) []string {
 	return rows
 }
 
-func projectmemProjectStatus(projectDir string) bool {
-	return projectDir != "" && util.Exists(filepath.Join(projectDir, ".projectmem"))
-}
+
 
 func doctorMissingTools(tools []*core.ToolManifest, agentID string) []string {
 	var missing []string
@@ -416,7 +397,7 @@ func doctorMissingTools(tools []*core.ToolManifest, agentID string) []string {
 		}
 		verify, ok := tool.VerifyFor[agentID]
 		if !ok {
-			if tool.ID == "codegraph" || tool.ID == "context-mode" || tool.ID == "projectmem" {
+			if tool.ID == "codegraph" || tool.ID == "context-mode" {
 				missing = append(missing, tool.Label)
 			}
 			continue
@@ -542,7 +523,7 @@ func doctorAgentRows(r agentReport) []string {
 				rows = append(rows, util.C.Gray("○ ")+tool.Label+util.C.Dim(" — not wired for this harness"))
 				continue
 			}
-			if tool.ID == "codegraph" || tool.ID == "context-mode" || tool.ID == "projectmem" {
+			if tool.ID == "codegraph" || tool.ID == "context-mode" {
 				rows = append(rows, util.C.Red("✖")+" "+tool.Label)
 			}
 			continue
@@ -598,14 +579,7 @@ func doctorAgentRows(r agentReport) []string {
 			continue
 		}
 
-		if tool.ID == "projectmem" {
-			if cfgPath, key := toolConfigLocation(r.id, tool.ID); cfgPath != "" && key != "" {
-				rows = append(rows, mark+" "+tool.Label+" → "+util.C.Gray(tildePath(cfgPath))+util.C.Dim(" ("+key+")"))
-			} else {
-				rows = append(rows, mark+" "+tool.Label+" → "+util.C.Dim("configuration location unknown"))
-			}
-			continue
-		}
+
 		if cfgPath, key := toolConfigLocation(r.id, tool.ID); cfgPath != "" && key != "" {
 			rows = append(rows, mark+" "+tool.Label+" → "+util.C.Gray(tildePath(cfgPath))+util.C.Dim(" ("+key+")"))
 		} else {

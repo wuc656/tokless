@@ -8,24 +8,16 @@ import (
 	"strings"
 )
 
-// ToklessOwners is render order: meta rules first, then tools.
+// ToklessOwners is render order: tools.
 var ToklessOwners = []string{
-	"principles",
-	"caveman",
-	"ponytail",
 	"codegraph",
 	"context-mode",
-	"projectmem",
 }
 
 // SectionsByOwner maps each owner to its heading marker.
 var SectionsByOwner = map[string]string{
-	"principles":   "## Principles",
-	"caveman":      "## Response Style (caveman)",
-	"ponytail":     "## Build Discipline (ponytail)",
 	"codegraph":    "## Code Index (codegraph)",
 	"context-mode": "## Context Tools (context-mode)",
-	"projectmem":   "## Project Memory (projectmem)",
 }
 
 // CursorProjectRuleSpec describes one checked-in Cursor project rule.
@@ -36,12 +28,13 @@ type CursorProjectRuleSpec struct {
 }
 
 var cursorProjectRuleSpecs = []CursorProjectRuleSpec{
-	{Filename: "principles.mdc", Description: "This rule guides software work toward simple, correct, and purposeful solutions.", Owner: "principles"},
-	{Filename: "response-style.mdc", Description: "This rule provides standards for concise, direct, and technically accurate communication.", Owner: "caveman"},
-	{Filename: "build-discipline.mdc", Description: "This rule guides simple, focused implementations that reuse existing solutions and avoid unnecessary work.", Owner: "ponytail"},
 	{Filename: "code-index.mdc", Description: "This rule guides codebase exploration through relevant symbols, flows, dependencies, and affected areas.", Owner: "codegraph"},
 	{Filename: "context-tools.mdc", Description: "This rule guides efficient context collection, analysis, and retrieval while keeping raw data focused.", Owner: "context-mode"},
-	{Filename: "project-memory.mdc", Description: "This rule guides recording project events and decisions in projectmem.", Owner: "projectmem"},
+}
+
+// CursorProjectRuleContent renders one Cursor project rule from embedded instructions.
+func CursorProjectRuleContent(spec CursorProjectRuleSpec) string {
+	return "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n\n" + instructionSection(spec.Owner) + "\n"
 }
 
 // CursorProjectRuleSpecs returns the Cursor project rule specifications.
@@ -49,57 +42,64 @@ func CursorProjectRuleSpecs() []CursorProjectRuleSpec {
 	return append([]CursorProjectRuleSpec(nil), cursorProjectRuleSpecs...)
 }
 
-// CursorProjectRuleContent renders one Cursor project rule from embedded instructions.
-func CursorProjectRuleContent(spec CursorProjectRuleSpec) string {
-	return "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n" + instructionSection(spec.Owner) + "\n"
-}
+// EnsureCursorProjectRules writes missing .cursor/rules/*.mdc files.
+func EnsureCursorProjectRules(dir string) error {
+	rulesDir := filepath.Join(dir, ".cursor", "rules")
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		return fmt.Errorf("create cursor rules dir: %w", err)
+	}
 
-// InstallCursorProjectRules installs Cursor rules in workspace, never overwriting
-// existing files.
-func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
-	if workspace == "" {
-		return false, fmt.Errorf("Cursor project rules require non-empty workspace")
-	}
-	info, err := os.Stat(workspace)
-	if err != nil {
-		return false, fmt.Errorf("stat Cursor workspace: %w", err)
-	}
-	if !info.IsDir() {
-		return false, fmt.Errorf("Cursor workspace is not a directory: %s", workspace)
-	}
-	if dryRun {
-		return true, nil
-	}
-	rulesDir := filepath.Join(workspace, ".cursor", "rules")
-	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
-		return false, fmt.Errorf("create Cursor rules directory: %w", err)
-	}
 	for _, spec := range cursorProjectRuleSpecs {
-		path := filepath.Join(rulesDir, spec.Filename)
 		if !IsToolSelected(spec.Owner) {
-			if current, err := os.ReadFile(path); err == nil && string(current) == CursorProjectRuleContent(spec) {
-				if err := os.Remove(path); err != nil {
-					return false, fmt.Errorf("remove Cursor rule %s: %w", spec.Filename, err)
-				}
-			}
 			continue
 		}
+		path := filepath.Join(rulesDir, spec.Filename)
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		if err := os.WriteFile(path, []byte(CursorProjectRuleContent(spec)), 0o644); err != nil {
-			return false, fmt.Errorf("write Cursor rule %s: %w", spec.Filename, err)
+		content := fmt.Sprintf("---\ndescription: %s\nglobs: *\nalwaysApply: true\n---\n\n%s\n",
+			spec.Description,
+			instructionSection(spec.Owner),
+		)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return fmt.Errorf("write %s: %w", spec.Filename, err)
+		}
+	}
+	return nil
+}
+
+// InstallCursorProjectRules writes missing rules and reports whether anything changed.
+func InstallCursorProjectRules(dir string, dryRun bool) (bool, error) {
+	rulesDir := filepath.Join(dir, ".cursor", "rules")
+	if dryRun {
+		return false, nil
+	}
+	if err := os.MkdirAll(rulesDir, 0755); err != nil {
+		return false, fmt.Errorf("create cursor rules dir: %w", err)
+	}
+
+	for _, spec := range cursorProjectRuleSpecs {
+		if !IsToolSelected(spec.Owner) {
+			continue
+		}
+		path := filepath.Join(rulesDir, spec.Filename)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		content := fmt.Sprintf("---\ndescription: %s\nglobs: *\nalwaysApply: true\n---\n\n%s\n",
+			spec.Description,
+			instructionSection(spec.Owner),
+		)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return false, fmt.Errorf("write %s: %w", spec.Filename, err)
 		}
 	}
 	return true, nil
 }
 
 var legacySectionsByOwner = map[string][]string{
-	"principles":   {"## 1. Principles", "## Principles (craft) →", "## Principles (craft)"},
-	"caveman":      {"## 2. Response Style", "## Response Style", "## Style", "## Caveman Style", "## Caveman", "## Voice (caveman)", "## Response Style (caveman)"},
-	"ponytail":     {"## 3. Build Discipline", "## Build Discipline", "## Build Less", "## Ponytail", "## Ponytail: Build Less", "## Reuse Ladder (ponytail)", "## Lazy Ladder (ponytail)", "## Build Discipline (ponytail)"},
-	"codegraph":    {"## 4. Code Search", "## Codegraph", "## Codegraph — MUST USE FOR CODE", "## Code Index (codegraph)"},
-	"context-mode": {"## 5. Context Control", "## Context Tools", "## Context Tools — MUST USE FOR DATA", "## Context Tools (context-mode)"},
+	"codegraph":    {"## 4. Code Search", "## Codegraph", "## Code Index (codegraph)"},
+	"context-mode": {"## 5. Context Control", "## Context Tools", "## Context Tools (context-mode)"},
 }
 
 func SectionPresent(body, owner string) bool {
@@ -121,32 +121,62 @@ func SectionMarkers(owner string) []string {
 	return markers
 }
 
-//go:embed agent_instructions.md
-var agentInstructionsTemplate string
+// StripSection removes the given owner's section from body.
+func StripSection(body string, owner string) string {
+	heading, ok := SectionsByOwner[owner]
+	if !ok {
+		return body
+	}
+	return stripHeading(body, heading)
+}
 
-func instructionIndexSection() string {
-	body := strings.TrimRight(normalizedAgentInstructions(), "\n")
-	idx := strings.Index(body, "\n## ")
+func stripHeading(body, heading string) string {
+	idx := strings.Index(body, heading)
 	if idx < 0 {
 		return body
 	}
-	return body[:idx]
+	before := strings.TrimRight(body[:idx], "\n")
+	after := body[idx+len(heading):]
+	if next := strings.Index(after, "\n## "); next >= 0 {
+		after = after[next+1:]
+	} else {
+		after = ""
+	}
+	after = strings.TrimLeft(after, "\n")
+	if before == "" {
+		return after
+	}
+	if after == "" {
+		return before
+	}
+	return before + "\n\n" + after
 }
 
+//go:embed agent_instructions.md
+var agentInstructionsTemplate string
+
+// instructionIndexSection returns the index / summary section at the top.
+func instructionIndexSection() string {
+	raw := normalizedAgentInstructions()
+	idx := strings.Index(raw, "\n## ")
+	if idx < 0 {
+		return strings.TrimRight(raw, "\n")
+	}
+	return strings.TrimRight(raw[:idx], "\n")
+}
+
+// instructionSection extracts the section for owner from agent_instructions.md.
 func instructionSection(owner string) string {
-	marker := SectionsByOwner[owner]
-	if marker == "" {
+	heading, ok := SectionsByOwner[owner]
+	if !ok {
 		return ""
 	}
-	body := strings.TrimRight(normalizedAgentInstructions(), "\n")
-	start := strings.Index(body, marker)
-	if start < 0 {
+	raw := normalizedAgentInstructions()
+	idx := strings.Index(raw, heading)
+	if idx < 0 {
 		return ""
 	}
-	if start > 0 {
-		start = strings.LastIndex(body[:start], "\n") + 1
-	}
-	rest := body[start:]
+	rest := raw[idx:]
 	if idx := strings.Index(rest[1:], "\n## "); idx >= 0 {
 		return strings.TrimRight(rest[:idx+1], "\n")
 	}
@@ -165,28 +195,12 @@ func ToklessAgentBody(owners []string) string {
 		b.WriteString(instructionIndexSection())
 		b.WriteString("\n")
 	}
-	if len(owners) > 0 {
-		b.WriteString(instructionSection("principles"))
-		b.WriteString("\n\n")
-	}
-	if hasOwner(owners, "caveman") {
-		b.WriteString(instructionSection("caveman"))
-		b.WriteString("\n\n")
-	}
-	if hasOwner(owners, "ponytail") {
-		b.WriteString(instructionSection("ponytail"))
-		b.WriteString("\n\n")
-	}
 	if hasOwner(owners, "codegraph") {
 		b.WriteString(instructionSection("codegraph"))
 		b.WriteString("\n\n")
 	}
 	if hasOwner(owners, "context-mode") {
 		b.WriteString(instructionSection("context-mode"))
-		b.WriteString("\n\n")
-	}
-	if hasOwner(owners, "projectmem") {
-		b.WriteString(instructionSection("projectmem"))
 		b.WriteString("\n\n")
 	}
 	return strings.TrimRight(b.String(), "\n")

@@ -488,7 +488,6 @@ func copilotHookOwned(cfg *util.OrderedMap, marker string) bool {
 		} else {
 			expected = map[string]bool{"PreToolUse": true, "preToolUse": true, "PostToolUse": true, "postToolUse": true}
 		}
-	case "projectmem-hook flat":
 		// CLI uses lowercase sessionStart, the VS Code surface SessionStart.
 		if _, ok := hooks.Get("SessionStart"); ok {
 			expected = map[string]bool{"SessionStart": true}
@@ -566,7 +565,6 @@ func copilotHookCommandOwned(command, marker string) bool {
 		return hasExactHookSuffix(command, marker, []string{"pretooluse", "posttooluse", "sessionstart", "stop"})
 	case "rtk-hook copilot":
 		return toklessManagedCommand(command, "rtk-hook", "copilot")
-	case "projectmem-hook flat":
 		return toklessManagedCommand(command, "projectmem-hook", "flat")
 	case "copilot-hook codegraph-index":
 		return toklessManagedCommand(command, "copilot-hook", "codegraph-index") || toklessManagedCommand(command, "copilot-hook", "codegraph-index", "--vscode")
@@ -608,70 +606,6 @@ func HasCopilotCodegraphIndexHook() bool {
 	return ok && cfg != nil && copilotHookOwned(cfg, "copilot-hook codegraph-index")
 }
 
-// InstallCopilotProjectmemHookSafe pushes project memory into each Copilot CLI session.
-func InstallCopilotProjectmemHookSafe() error {
-	p := util.CopilotPathsResolved()
-	if err := util.EnsureDir(p.HooksDir); err != nil {
-		return err
-	}
-	_ = os.Remove(copilotHooksFile("tokless-projectmem.json"))
-	projectmemCmd := toklessCommand("projectmem-hook", "flat")
-	if projectmemCmd == "" {
-		return errNoStableTokless
-	}
-	hook := util.NewOrderedMap()
-	hook.Set("type", "command")
-	hook.Set("command", projectmemCmd)
-	hooks := util.NewOrderedMap()
-	hooks.Set("sessionStart", []any{hook})
-	root := util.NewOrderedMap()
-	root.Set("version", 1)
-	root.Set("hooks", hooks)
-	return writeOwnedCopilotHook(copilotHooksFile("projectmem-context.json"), util.StringifyJSON(root), "projectmem-hook flat")
-}
-
-func RemoveCopilotProjectmemHookSafe() error {
-	err := removeOwnedCopilotHook(copilotHooksFile("projectmem-context.json"), "projectmem-hook flat")
-	_ = os.Remove(copilotHooksFile("tokless-projectmem.json"))
-	return err
-}
-
-func HasCopilotProjectmemHook() bool {
-	raw, ok := util.ReadFileSafe(copilotHooksFile("projectmem-context.json"))
-	cfg := util.TryParseJsonc(raw)
-	return ok && cfg != nil && copilotHookOwned(cfg, "projectmem-hook flat")
-}
-
-// InstallCopilotIdeProjectmemHook writes the VS Code surface sessionStart hook (.github/hooks/).
-func InstallCopilotIdeProjectmemHookSafe() error {
-	if err := util.EnsureDir(copilotIdeHooksDir()); err != nil {
-		return err
-	}
-	hook := util.NewOrderedMap()
-	hook.Set("type", "command")
-	projectmemCmd := toklessCommand("projectmem-hook", "flat")
-	if projectmemCmd == "" {
-		return errNoStableTokless
-	}
-	hook.Set("command", projectmemCmd)
-	hook.Set("timeout", 10)
-	hooks := util.NewOrderedMap()
-	hooks.Set("SessionStart", []any{hook})
-	root := util.NewOrderedMap()
-	root.Set("version", 1)
-	root.Set("hooks", hooks)
-	return writeOwnedCopilotHook(copilotIdeHooksFile("projectmem-context.json"), util.StringifyJSON(root), "projectmem-hook flat")
-}
-
-func RemoveCopilotIdeProjectmemHookSafe() error {
-	return removeOwnedCopilotHook(copilotIdeHooksFile("projectmem-context.json"), "projectmem-hook flat")
-}
-
-func HasCopilotIdeProjectmemHook() bool {
-	raw, ok := util.ReadFileSafe(copilotIdeHooksFile("projectmem-context.json"))
-	cfg := util.TryParseJsonc(raw)
-	return ok && cfg != nil && copilotHookOwned(cfg, "projectmem-hook flat")
-}
 
 func HasCopilotRtkHook() bool {
 	raw, ok := util.ReadFileSafe(copilotHooksFile("tokless-rtk.json"))
@@ -963,10 +897,6 @@ func CopilotMcpBounded(toolID string, ide bool) bool {
 	return found && copilotMcpEqual(existing, copilotMcpDesired(toolID, ide))
 }
 
-// CopilotProjectmemMcpBounded reports whether the projectmem MCP entry is the tokless-bounded spawn.
-func CopilotProjectmemMcpBounded(ide bool) bool {
-	return CopilotMcpBounded("projectmem", ide)
-}
 
 func CopilotIdeMcpHas(toolID string) bool {
 	raw, ok := util.ReadFileSafe(copilotIdeMcpFile())

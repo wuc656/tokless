@@ -91,17 +91,6 @@ func GrokContextModeMcpHas() bool {
 	return ok && enabled && !grokMcpDisabled(raw, "context-mode") && grokToklessCommand(command) && grokContextModeArgs(args)
 }
 
-// GrokProjectmemMcpHas reports whether projectmem uses Tokless's bounded MCP proxy.
-func GrokProjectmemMcpHas() bool {
-	raw, ok := util.ReadFileSafe(grokConfigFile())
-	command, args, enabled, ok := grokMcpFields(raw, "projectmem")
-	return ok && enabled && !grokMcpDisabled(raw, "projectmem") && grokToklessCommand(command) && grokProjectmemArgs(args)
-}
-
-func grokProjectmemArgs(args []string) bool {
-	command, tail, ok := grokMcpCommand(args, []string{"run-mcp", "--tool", "projectmem"})
-	return ok && len(tail) == 0 && grokCommandName(command, "pjm-mcp")
-}
 
 func grokMcpDisabled(raw, toolID string) bool {
 	_, _, servers, ok := grokDisabledServers(raw)

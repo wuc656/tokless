@@ -533,8 +533,6 @@ func grokMcpBounded(toolID string) bool {
 		return GrokMcpHas("codegraph")
 	case "context-mode":
 		return GrokContextModeMcpHas()
-	case "projectmem":
-		return GrokProjectmemMcpHas()
 	}
 	return false
 }

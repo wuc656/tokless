@@ -561,10 +561,6 @@ func PiMcpBounded(toolID string) bool {
 	return found && isMap && piMcpEntryMatches(em, piMcpSpawn(toolID))
 }
 
-// PiProjectmemMcpBounded reports whether the projectmem MCP entry is exactly the tokless-bounded entry.
-func PiProjectmemMcpBounded() bool {
-	return PiMcpBounded("projectmem")
-}
 
 func PiMcpHas(toolID string) bool {
 	raw, ok := util.ReadFileSafe(piMcpFile())

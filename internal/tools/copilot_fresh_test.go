@@ -350,7 +350,7 @@ func TestCopilotInstructionBlock(t *testing.T) {
 	copilotTestHome(t)
 	t.Setenv("TOKLESS_TEST", "1")
 
-	_ = WriteOwner("copilot", "caveman")
+	_ = WriteOwner("copilot", "context-mode")
 	_ = WriteOwner("copilot", "codegraph")
 
 	instr := util.CopilotPathsResolved().Instructions
@@ -358,11 +358,11 @@ func TestCopilotInstructionBlock(t *testing.T) {
 	if !ok {
 		t.Fatal("instructions not written")
 	}
-	if !strings.Contains(raw, "caveman") || !strings.Contains(raw, "codegraph") {
+	if !strings.Contains(raw, "context-mode") || !strings.Contains(raw, "codegraph") {
 		t.Fatal("instructions missing sections")
 	}
 
-	RemoveOwner("copilot", "caveman")
+	RemoveOwner("copilot", "context-mode")
 	RemoveOwner("copilot", "codegraph")
 	if util.Exists(instr) {
 		t.Fatal("instructions should be removed when empty")
@@ -374,7 +374,7 @@ func TestCopilotInstructionToolsSyncIdeInstructions(t *testing.T) {
 	t.Cleanup(func() { agents.SetIdeProjectRoot("") })
 	t.Setenv("TOKLESS_TEST", "1")
 
-	for _, tool := range []*core.ToolManifest{caveman, ponytail} {
+	for _, tool := range []*core.ToolManifest{codegraph} {
 		ok, err := tool.WireFor["copilot"](core.RunOpts{})
 		if err != nil || !ok {
 			t.Fatalf("wire %s: ok=%v err=%v", tool.ID, ok, err)

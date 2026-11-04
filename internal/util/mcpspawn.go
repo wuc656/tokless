@@ -36,12 +36,6 @@ func PickMcpSpawn(bin string, extraArgs ...string) McpSpawn {
 		if spawn, ok := PickCodegraphSpawn(extraArgs...); ok {
 			return spawn
 		}
-	} else if bin == "projectmem" {
-		spawn = wrapCmdShim(McpSpawn{Command: "pjm-mcp", Args: extraArgs})
-		if p := Which("pjm-mcp"); p != "" {
-			spawn = wrapCmdShim(McpSpawn{Command: spawnCommand("pjm-mcp", p), Args: extraArgs})
-		}
-		return WrapBoundedTool("projectmem", spawn)
 	} else if p := Which(bin); p != "" {
 		spawn = wrapCmdShim(McpSpawn{Command: spawnCommand(bin, p), Args: extraArgs})
 		if bin == "context-mode" {

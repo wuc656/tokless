@@ -270,7 +270,6 @@ func gatherVersions(force bool) map[string]VersionInfo {
 			"context-mode": {Installed: nil, Latest: strp("1.0.169"), Channel: "npm", Present: false},
 		"headroom":     {Installed: strp("0.35.0"), Latest: strp("0.35.0"), Channel: "uv", Present: HeadroomInstalled()},
 		"tokless":      {Installed: strp("0.1.0"), Latest: strp("0.1.0"), Channel: "npm", Present: false},
-		"projectmem":   {Installed: strp("0.3.4"), Latest: strp("0.3.4"), Channel: "uv", Present: false},
 		}
 	}
 	// Latest (slow, network) is cached; installed (fast, local) is always live.
@@ -280,7 +279,6 @@ func gatherVersions(force bool) map[string]VersionInfo {
 	out["codegraph"] = VersionInfo{Installed: npmInstalledVersion("@colbymchenry/codegraph"), Latest: latest["codegraph"], Channel: "npm", Present: npmInstalledVersion("@colbymchenry/codegraph") != nil}
 	out["context-mode"] = VersionInfo{Installed: npmInstalledVersion("context-mode"), Latest: latest["context-mode"], Channel: "npm", Present: npmInstalledVersion("context-mode") != nil}
 	out["headroom"] = VersionInfo{Installed: HeadroomInstalledVersion(), Latest: latest["headroom"], Channel: "uv", Present: HeadroomInstalled()}
-	out["projectmem"] = VersionInfo{Installed: ProjectmemInstalledVersion(), Latest: latest["projectmem"], Channel: "uv", Present: ProjectmemInstalled()}
 	out["tokless"] = VersionInfo{Installed: npmInstalledVersion("tokless"), Latest: latest["tokless"], Channel: "npm", Present: npmInstalledVersion("tokless") != nil}
 	return out
 }
@@ -301,8 +299,6 @@ func InstalledVersionFor(id string) *string {
 		return npmInstalledVersion("context-mode")
 	case "headroom":
 		return HeadroomInstalledVersion()
-	case "projectmem":
-		return ProjectmemInstalledVersion()
 	case "tokless":
 		return npmInstalledVersion("tokless")
 	}
@@ -325,8 +321,6 @@ func InstalledPathFor(id string) string {
 			return ""
 		}
 		return HeadroomBin()
-	case "projectmem":
-		return uvToolPath("projectmem", "pjm")
 	}
 	return ""
 }
@@ -379,7 +373,7 @@ func npmPkgDirFromPrefixes(pkg, npmPrefix, userPrefix string) string {
 	return ""
 }
 
-var toolIDs = []string{"rtk", "codegraph", "context-mode", "tokless", "headroom", "projectmem"}
+var toolIDs = []string{"rtk", "codegraph", "context-mode", "tokless", "headroom"}
 
 var latestFetcher = fetchLatestFor
 
@@ -396,8 +390,6 @@ func fetchLatestFor(id string) *string {
 		return npmLatest("tokless")
 	case "headroom":
 		return pypiLatest("headroom-ai")
-	case "projectmem":
-		return pypiLatest("projectmem")
 	}
 	return nil
 }

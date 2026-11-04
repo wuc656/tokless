@@ -317,7 +317,7 @@ func toolStatsBinary(tool string) string {
 
 func doctorToolStats(projectDir string, isProject bool) map[string][]string {
 	stats := make(map[string][]string)
-	for _, tool := range []string{"headroom", "projectmem", "rtk", "codegraph", "context-mode"} {
+	for _, tool := range []string{"headroom", "rtk", "codegraph", "context-mode"} {
 		if tool == "context-mode" {
 			if toolStatsBinary(tool) != "" {
 				stats[tool] = contextModeStats(util.Home())
@@ -333,8 +333,6 @@ func doctorToolStats(projectDir string, isProject bool) map[string][]string {
 		case "headroom":
 			stats[tool] = headroomStatsSummary()
 			continue
-		case "projectmem":
-			args = []string{"stats", "--format", "json"}
 		case "rtk":
 			args = []string{"gain"}
 		case "codegraph":
@@ -416,9 +414,6 @@ func headroomStatsSummary() []string {
 }
 
 func labelledStats(tool, out string) []string {
-	if tool == "projectmem" {
-		return projectmemStats(out)
-	}
 	if tool == "codegraph" {
 		return codegraphStats(out)
 	}
@@ -435,10 +430,7 @@ func labelledStats(tool, out string) []string {
 			continue
 		}
 		switch {
-		case strings.HasPrefix(line, "Score:") && tool == "projectmem",
-			strings.HasPrefix(line, "Total Tokens Saved:") && tool == "projectmem",
-			strings.HasPrefix(line, "Estimated USD Saved:") && tool == "projectmem",
-			strings.HasPrefix(line, "Total commands:") && tool == "rtk",
+		case strings.HasPrefix(line, "Total commands:") && tool == "rtk",
 			strings.HasPrefix(line, "Tokens saved:") && tool == "rtk",
 			strings.HasPrefix(line, "Efficiency meter:") && tool == "rtk",
 			strings.HasPrefix(line, "Files:") && tool == "codegraph",
@@ -452,27 +444,6 @@ func labelledStats(tool, out string) []string {
 		return []string{statusInfo("unavailable — no recognized stats output")}
 	}
 	return rows
-}
-
-func projectmemStats(raw string) []string {
-	var d struct {
-		Score      int              `json:"score"`
-		Grade      string           `json:"grade"`
-		Tokens     int64            `json:"tokens_saved"`
-		USD        float64          `json:"usd_saved"`
-		Hours      float64          `json:"debugging_hours_saved"`
-		Components map[string]int64 `json:"components"`
-		Capture    struct {
-			Auto   int64   `json:"auto_captured"`
-			Manual int64   `json:"manual"`
-			Total  int64   `json:"total"`
-			Rate   float64 `json:"auto_rate"`
-		} `json:"capture"`
-	}
-	if json.Unmarshal([]byte(raw), &d) != nil || d.Grade == "" {
-		return []string{statusInfo("unavailable — no recognized stats output")}
-	}
-	return []string{fmt.Sprintf("Score: %d/100 (%s)", d.Score, d.Grade), fmt.Sprintf("Saved: %s tokens / %s / %.1f debugging hours", humanCount(d.Tokens), humanUSD(d.USD), d.Hours), fmt.Sprintf("Capture: %s auto / %s manual / %s total (%.1f%% auto)", humanCount(d.Capture.Auto), humanCount(d.Capture.Manual), humanCount(d.Capture.Total), d.Capture.Rate), fmt.Sprintf("Knowledge: %d failed / %d successful / %d decisions / %d fixes / %d notes / %d gotcha files / %d high-churn", d.Components["failed_approaches"], d.Components["successful_attempts"], d.Components["decisions_documented"], d.Components["fixes_with_context"], d.Components["notes_count"], d.Components["files_with_gotchas"], d.Components["high_churn_files"])}
 }
 
 func codegraphStats(raw string) []string {

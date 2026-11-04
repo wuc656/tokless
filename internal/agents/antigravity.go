@@ -959,10 +959,6 @@ func AntigravityMcpBounded(toolID string) bool {
 	return true
 }
 
-// AntigravityProjectmemMcpBounded reports whether every supported MCP config holds the tokless-bounded projectmem entry.
-func AntigravityProjectmemMcpBounded() bool {
-	return AntigravityMcpBounded("projectmem")
-}
 
 // AntigravityMcpHas reports whether at least one supported global MCP config
 // registers the tool. Unreadable or malformed files are skipped.
@@ -1226,68 +1222,3 @@ func antigravityMcpManaged(toolID string, existing any) bool {
 	return command == spawn.Command && argsEq(args, spawn.Args) && trust == true
 }
 
-// --- projectmem SessionStart hook ---
-
-const antigravityProjectmemGroup = "projectmem-context"
-
-// InstallAntigravityProjectmemHook pushes project memory into each agy session.
-func InstallAntigravityProjectmemHook() bool {
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	if ok && util.HasJSONCComments(raw) {
-		return false
-	}
-	cfg := util.TryParseJsonc(raw)
-	if cfg == nil {
-		if ok && strings.TrimSpace(raw) != "" {
-			return false
-		}
-		cfg = util.NewOrderedMap()
-	}
-	command, _ := toklessCommandOK("projectmem-hook", "agy")
-	if command == "" {
-		return false
-	}
-	hook := util.NewOrderedMap()
-	hook.Set("type", "command")
-	hook.Set("command", command)
-	hook.Set("timeout", 15)
-	group := util.NewOrderedMap()
-	group.Set("SessionStart", []interface{}{hook})
-	cfg.Delete("tokless-projectmem")
-	cfg.Set(antigravityProjectmemGroup, group)
-	if err := util.EnsureDir(filepath.Dir(hooksFile)); err != nil {
-		return false
-	}
-	if next := util.StringifyJSON(cfg); next != raw {
-		if util.WriteFile(hooksFile, next) != nil {
-			return false
-		}
-	}
-	return HasAntigravityProjectmemHook()
-}
-
-func HasAntigravityProjectmemHook() bool {
-	raw, ok := util.ReadFileSafe(antigravityHooksFile())
-	return ok && strings.Contains(raw, `"`+antigravityProjectmemGroup+`"`) && strings.Contains(raw, "projectmem-hook agy")
-}
-
-func RemoveAntigravityProjectmemHook() {
-	hooksFile := antigravityHooksFile()
-	raw, ok := util.ReadFileSafe(hooksFile)
-	if !ok {
-		return
-	}
-	cfg := util.TryParseJsonc(raw)
-	if cfg == nil {
-		return
-	}
-	if _, ok := cfg.Get(antigravityProjectmemGroup); ok {
-		cfg.Delete(antigravityProjectmemGroup)
-		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
-	}
-	if _, ok := cfg.Get("tokless-projectmem"); ok {
-		cfg.Delete("tokless-projectmem")
-		_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
-	}
-}

@@ -11,14 +11,14 @@ import (
 )
 
 func updateToolFlow(id string, info util.VersionInfo, install func() (bool, bool, error)) (needsInstall, verified bool, err error) {
-	if id == "projectmem" || id == "headroom" {
+	if id == "headroom" {
 		needsInstall = !info.Present
 	} else {
 		needsInstall = info.Installed == nil && info.Latest != nil
 	}
 	if install != nil {
 		installed, present, installErr := install()
-		return needsInstall, installed && ((id != "projectmem" && id != "headroom") || present), installErr
+		return needsInstall, installed && (id != "headroom" || present), installErr
 	}
 	return needsInstall, false, nil
 }
@@ -209,8 +209,6 @@ func RunUpdate(opts InitOptions) int {
 			})
 			present := true
 			switch tool.ID {
-			case "projectmem":
-				present = util.ProjectmemInstalled()
 			case "headroom":
 				present = util.HeadroomInstalled()
 			}

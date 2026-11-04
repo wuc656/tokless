@@ -14,7 +14,7 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-var projectMarkers = []string{".git", "package.json", "go.mod", "Cargo.toml", "pyproject.toml", "pom.xml", "build.gradle", "tsconfig.json", "requirements.txt", ".projectmem"}
+var projectMarkers = []string{".git", "package.json", "go.mod", "Cargo.toml", "pyproject.toml", "pom.xml", "build.gradle", "tsconfig.json", "requirements.txt"}
 
 func looksLikeProject(dir string) bool {
 	for _, m := range projectMarkers {
@@ -184,16 +184,13 @@ func RunCodegraphIndexHook() int {
 
 // RunGrokSessionStartHook initializes CodeGraph for a new Grok workspace.
 func RunGrokSessionStartHook() int {
-	if !util.IsToolSelected("codegraph") && !util.IsToolSelected("projectmem") {
+	if !util.IsToolSelected("codegraph") {
 		return 0
 	}
 	input, _ := io.ReadAll(os.Stdin)
 	dir := resolveHookProjectDirFromInput(input)
 	if dir == "" {
 		return 0
-	}
-	if util.IsToolSelected("projectmem") {
-		tools.RefreshProjectmemRuleFiles(dir)
 	}
 	if util.IsToolSelected("codegraph") {
 		return runCodegraphAutoIndex(dir)
@@ -203,7 +200,7 @@ func RunGrokSessionStartHook() int {
 
 // RunCursorProjectRulesHook refreshes project rules on Cursor workspace startup.
 func RunCursorProjectRulesHook() int {
-	if !util.IsToolSelected("principles") && !util.IsToolSelected("caveman") && !util.IsToolSelected("ponytail") && !util.IsToolSelected("codegraph") && !util.IsToolSelected("context-mode") && !util.IsToolSelected("projectmem") {
+	if !util.IsToolSelected("codegraph") && !util.IsToolSelected("context-mode") {
 		return 0
 	}
 	input, _ := io.ReadAll(os.Stdin)
@@ -216,9 +213,6 @@ func RunCursorProjectRulesHook() int {
 			if err != nil {
 				util.L.Err(err.Error())
 			}
-		}
-		if util.IsToolSelected("projectmem") {
-			tools.RefreshProjectmemRuleFiles(project)
 		}
 	}
 	return 0

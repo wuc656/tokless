@@ -29,7 +29,7 @@ func TestMcpAdapterUnknownAgent(t *testing.T) {
 
 func TestMcpToolManifestCoverage(t *testing.T) {
 	for _, agent := range core.ListAgents() {
-		for _, tool := range []*core.ToolManifest{codegraph, contextMode, projectmem} {
+		for _, tool := range []*core.ToolManifest{codegraph, contextMode} {
 			if tool.WireFor[agent.ID] == nil || tool.UnwireFor[agent.ID] == nil || tool.VerifyFor[agent.ID] == nil || tool.WiredAnyFor[agent.ID] == nil {
 				t.Errorf("%s lacks complete MCP coverage for %s", tool.ID, agent.ID)
 			}
@@ -45,9 +45,7 @@ func TestMcpCommandCodegraphIsWrapped(t *testing.T) {
 	if !strings.Contains(strings.Join(cmd, " "), "run-mcp") {
 		t.Fatalf("codegraph command is not auto-index wrapped: %v", cmd)
 	}
-	if pm := agents.McpCommand("claude", "projectmem"); len(pm) == 0 {
-		t.Fatal("empty projectmem command")
-	}
+
 }
 
 func TestMcpDispatchRoundTrip(t *testing.T) {
@@ -114,22 +112,5 @@ func TestCodegraphVerifyWrappedVsUnwrapped(t *testing.T) {
 	}
 	if got := codegraphVerify("claude"); !got {
 		t.Fatal("codegraphVerify(claude) should pass with unwrapped codegraph entry")
-	}
-}
-
-func TestProjectmemVerifyBehavior(t *testing.T) {
-	withMcpDispatchTest(t)
-
-	// Wrapped projectmem should pass projectmemVerify
-	if !mcpConfigure("claude", "projectmem") {
-		t.Fatal("mcpConfigure claude projectmem failed")
-	}
-	if got := projectmemVerify("claude"); !got {
-		t.Fatal("projectmemVerify(claude) should pass after configure")
-	}
-
-	// Loose (anyShape) check should also pass
-	if !mcpHas("claude", "projectmem", true) {
-		t.Fatal("loose mcpHas should pass for projectmem after configure")
 	}
 }

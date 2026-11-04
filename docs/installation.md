@@ -9,13 +9,13 @@ Install and configure tokless for this user.
    **macOS / Linux**
 
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.sh | bash
+   curl -fsSL https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.sh | bash
    ```
 
    **Windows (PowerShell)**
 
    ```powershell
-   irm https://raw.githubusercontent.com/HoangP8/tokless/main/scripts/install.ps1 | iex
+   irm https://raw.githubusercontent.com/wuc656/tokless/main/scripts/install.ps1 | iex
    ```
 
 4. Configure selected agents explicitly:

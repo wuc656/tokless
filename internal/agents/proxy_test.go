@@ -605,7 +605,7 @@ func TestDetectCodexRequiresExactManagedProviderBlock(t *testing.T) {
 		{name: "foreign block", block: `
 [model_providers.headroom]
 name = "Foreign proxy"
-base_url = "` + endpoint + `"
+base_url = "http://foreign.example.com/v1"
 wire_api = "responses"
 experimental_bearer_token = "tokless"
 supports_websockets = false

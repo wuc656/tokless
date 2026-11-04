@@ -7,6 +7,11 @@ import (
 )
 
 func TestInstallCursorProjectRules(t *testing.T) {
+	home := t.TempDir()
+	SetHomeOverride(home)
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Cleanup(func() { SetHomeOverride("") })
 	workspace := filepath.Join(t.TempDir(), "project with spaces")
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
 		t.Fatal(err)
@@ -37,7 +42,7 @@ func TestInstallCursorProjectRulesRespectsSelection(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Cleanup(func() { SetHomeOverride("") })
-	if err := SaveSelection("selected", []string{"principles"}); err != nil {
+	if err := SaveSelection("selected", []string{"codegraph"}); err != nil {
 		t.Fatal(err)
 	}
 	workspace := t.TempDir()
@@ -47,14 +52,14 @@ func TestInstallCursorProjectRulesRespectsSelection(t *testing.T) {
 	rulesDir := filepath.Join(workspace, ".cursor", "rules")
 	for _, spec := range CursorProjectRuleSpecs() {
 		_, err := os.Stat(filepath.Join(rulesDir, spec.Filename))
-		if spec.Owner == "principles" && err != nil {
+		if spec.Owner == "codegraph" && err != nil {
 			t.Errorf("selected rule missing: %v", err)
 		}
-		if spec.Owner != "principles" && !os.IsNotExist(err) {
+		if spec.Owner != "codegraph" && !os.IsNotExist(err) {
 			t.Errorf("unselected rule %s was installed", spec.Owner)
 		}
 	}
-	generated := filepath.Join(rulesDir, "response-style.mdc")
+	generated := filepath.Join(rulesDir, "context-tools.mdc")
 	if err := os.WriteFile(generated, []byte(CursorProjectRuleContent(CursorProjectRuleSpecs()[1])), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +67,7 @@ func TestInstallCursorProjectRulesRespectsSelection(t *testing.T) {
 	if err := os.WriteFile(foreign, []byte("user authored"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := SaveSelection("selected", []string{"principles"}); err != nil {
+	if err := SaveSelection("selected", []string{"codegraph"}); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := InstallCursorProjectRules(workspace, false); err != nil || !ok {

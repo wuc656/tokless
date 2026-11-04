@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"github.com/HoangP8/tokless/internal/util"
@@ -122,7 +123,18 @@ func runHeadroomSupervised(bin string, args []string) error {
 	}
 	cmd := exec.Command(bin, args...)
 	cmd.Env = proxyDaemonEnv()
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= 0x08000000
+	cmd.SysProcAttr.HideWindow = true
+
+	_, logFile := proxyFiles()
+	if f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err == nil {
+		defer f.Close()
+		cmd.Stdout = f
+		cmd.Stderr = f
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}

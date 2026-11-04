@@ -565,7 +565,6 @@ func copilotHookCommandOwned(command, marker string) bool {
 		return hasExactHookSuffix(command, marker, []string{"pretooluse", "posttooluse", "sessionstart", "stop"})
 	case "rtk-hook copilot":
 		return toklessManagedCommand(command, "rtk-hook", "copilot")
-		return toklessManagedCommand(command, "projectmem-hook", "flat")
 	case "copilot-hook codegraph-index":
 		return toklessManagedCommand(command, "copilot-hook", "codegraph-index") || toklessManagedCommand(command, "copilot-hook", "codegraph-index", "--vscode")
 	default:

@@ -21,3 +21,5 @@ func killProcessTree(c *exec.Cmd) {
 	_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 	_ = c.Process.Kill()
 }
+
+func prepareSysProcAttr(_ *exec.Cmd, _ bool) {}

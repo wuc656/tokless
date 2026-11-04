@@ -34,7 +34,7 @@ var cursorProjectRuleSpecs = []CursorProjectRuleSpec{
 
 // CursorProjectRuleContent renders one Cursor project rule from embedded instructions.
 func CursorProjectRuleContent(spec CursorProjectRuleSpec) string {
-	return "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n\n" + instructionSection(spec.Owner) + "\n"
+	return "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n" + instructionSection(spec.Owner) + "\n"
 }
 
 // CursorProjectRuleSpecs returns the Cursor project rule specifications.
@@ -42,56 +42,39 @@ func CursorProjectRuleSpecs() []CursorProjectRuleSpec {
 	return append([]CursorProjectRuleSpec(nil), cursorProjectRuleSpecs...)
 }
 
-// EnsureCursorProjectRules writes missing .cursor/rules/*.mdc files.
-func EnsureCursorProjectRules(dir string) error {
-	rulesDir := filepath.Join(dir, ".cursor", "rules")
-	if err := os.MkdirAll(rulesDir, 0755); err != nil {
-		return fmt.Errorf("create cursor rules dir: %w", err)
+// InstallCursorProjectRules installs Cursor rules in workspace, never overwriting
+// existing files, and removing generated files when their tool is deselected.
+func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
+	if workspace == "" {
+		return false, fmt.Errorf("Cursor project rules require non-empty workspace")
 	}
-
-	for _, spec := range cursorProjectRuleSpecs {
-		if !IsToolSelected(spec.Owner) {
-			continue
-		}
-		path := filepath.Join(rulesDir, spec.Filename)
-		if _, err := os.Stat(path); err == nil {
-			continue
-		}
-		content := fmt.Sprintf("---\ndescription: %s\nglobs: *\nalwaysApply: true\n---\n\n%s\n",
-			spec.Description,
-			instructionSection(spec.Owner),
-		)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", spec.Filename, err)
-		}
+	info, err := os.Stat(workspace)
+	if err != nil {
+		return false, fmt.Errorf("stat Cursor workspace: %w", err)
 	}
-	return nil
-}
-
-// InstallCursorProjectRules writes missing rules and reports whether anything changed.
-func InstallCursorProjectRules(dir string, dryRun bool) (bool, error) {
-	rulesDir := filepath.Join(dir, ".cursor", "rules")
+	if !info.IsDir() {
+		return false, fmt.Errorf("Cursor workspace is not a directory: %s", workspace)
+	}
 	if dryRun {
-		return false, nil
+		return true, nil
 	}
-	if err := os.MkdirAll(rulesDir, 0755); err != nil {
-		return false, fmt.Errorf("create cursor rules dir: %w", err)
+	rulesDir := filepath.Join(workspace, ".cursor", "rules")
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+		return false, fmt.Errorf("create Cursor rules directory: %w", err)
 	}
-
 	for _, spec := range cursorProjectRuleSpecs {
+		path := filepath.Join(rulesDir, spec.Filename)
 		if !IsToolSelected(spec.Owner) {
+			if data, readErr := os.ReadFile(path); readErr == nil && string(data) == CursorProjectRuleContent(spec) {
+				_ = os.Remove(path)
+			}
 			continue
 		}
-		path := filepath.Join(rulesDir, spec.Filename)
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		content := fmt.Sprintf("---\ndescription: %s\nglobs: *\nalwaysApply: true\n---\n\n%s\n",
-			spec.Description,
-			instructionSection(spec.Owner),
-		)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			return false, fmt.Errorf("write %s: %w", spec.Filename, err)
+		if err := os.WriteFile(path, []byte(CursorProjectRuleContent(spec)), 0o644); err != nil {
+			return false, fmt.Errorf("write Cursor rule %s: %w", spec.Filename, err)
 		}
 	}
 	return true, nil
@@ -193,7 +176,7 @@ func ToklessAgentBody(owners []string) string {
 
 	if len(owners) >= 2 {
 		b.WriteString(instructionIndexSection())
-		b.WriteString("\n")
+		b.WriteString("\n\n")
 	}
 	if hasOwner(owners, "codegraph") {
 		b.WriteString(instructionSection("codegraph"))

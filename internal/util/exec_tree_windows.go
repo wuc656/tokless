@@ -5,6 +5,7 @@ package util
 import (
 	"os/exec"
 	"strconv"
+	"syscall"
 )
 
 func prepareCommandForTreeKill(_ *exec.Cmd) {}
@@ -13,6 +14,18 @@ func killProcessTree(c *exec.Cmd) {
 	if c.Process == nil {
 		return
 	}
-	_ = exec.Command("taskkill", "/PID", strconv.Itoa(c.Process.Pid), "/T", "/F").Run()
+	tk := exec.Command("taskkill", "/PID", strconv.Itoa(c.Process.Pid), "/T", "/F")
+	tk.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	_ = tk.Run()
 	_ = c.Process.Kill()
+}
+
+func prepareSysProcAttr(c *exec.Cmd, hide bool) {
+	if hide {
+		if c.SysProcAttr == nil {
+			c.SysProcAttr = &syscall.SysProcAttr{}
+		}
+		c.SysProcAttr.CreationFlags |= 0x08000000
+		c.SysProcAttr.HideWindow = true
+	}
 }

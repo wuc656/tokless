@@ -6,13 +6,10 @@ import (
 )
 
 func TestAgentInstructionsContent(t *testing.T) {
-	owners := []string{"principles", "caveman", "ponytail", "codegraph", "context-mode"}
+	owners := []string{"codegraph", "context-mode"}
 	body := ToklessAgentBody(owners)
 
 	for _, section := range []string{
-		"## Principles",
-		"## Response Style (caveman)",
-		"## Build Discipline (ponytail)",
 		"## Code Index (codegraph)",
 		"## Context Tools (context-mode)",
 	} {
@@ -31,9 +28,7 @@ func TestAgentInstructionsContent(t *testing.T) {
 	}
 
 	for _, kw := range []string{
-		"Drop articles", "terse", "YAGNI", "codegraph_explore",
-		"ctx_execute", "Think Before Coding", "Simplicity First",
-		"Surgical Changes", "Goal-Driven Execution",
+		"codegraph_explore", "ctx_execute",
 	} {
 		if !strings.Contains(body, kw) {
 			t.Errorf("MISSING keyword: %s", kw)
@@ -54,11 +49,8 @@ func TestPerOwnerRendering(t *testing.T) {
 		marker  string
 		example string
 	}{
-		{"caveman", "## Response Style (caveman)", "Drop articles"},
-		{"ponytail", "## Build Discipline (ponytail)", "YAGNI"},
 		{"codegraph", "## Code Index (codegraph)", "codegraph_explore"},
 		{"context-mode", "## Context Tools (context-mode)", "ctx_execute"},
-		{"principles", "## Principles", "Think Before Coding"},
 	} {
 		body := ToklessAgentBody([]string{tc.owner})
 		if !strings.Contains(body, tc.marker) {

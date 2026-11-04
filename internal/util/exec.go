@@ -48,6 +48,7 @@ func Run(cmd string, args []string, opts RunOptions) ExecResult {
 		c.Stderr = os.Stderr
 		c.Stdin = os.Stdin
 	}
+	prepareSysProcAttr(c, opts.Capture || opts.Quiet)
 	err := runCmd(c, opts.Ctx)
 	res := ExecResult{Stdout: outBuf.String(), Stderr: errBuf.String()}
 	if err != nil {
@@ -162,13 +163,13 @@ func WhichAny(bins []string) (string, string) {
 
 // RtkInstallDirs returns well-known rtk install locations.
 func RtkInstallDirs() []string {
+	dirs := []string{filepath.Join(Home(), ".local", "bin")}
 	if IsWin {
 		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return []string{filepath.Join(local, "rtk", "bin")}
+			dirs = append([]string{filepath.Join(local, "rtk", "bin")}, dirs...)
 		}
-		return nil
 	}
-	return []string{filepath.Join(Home(), ".local", "bin")}
+	return dirs
 }
 
 // BinaryHealthy probes --version for a dot — rejects shims and 0-byte files.

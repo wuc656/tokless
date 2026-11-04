@@ -39,10 +39,15 @@ func headroomFailure(stage string, result util.ExecResult) error {
 
 func headroomFailureFor(stage string, result util.ExecResult, nativeRisk bool) error {
 	hint := ""
-	if nativeRisk {
+	detail := strings.TrimSpace(result.Stderr)
+	if detail == "" {
+		detail = strings.TrimSpace(result.Stdout)
+	}
+	if runtime.GOOS == "windows" && (strings.Contains(detail, "os error 5") || strings.Contains(strings.ToLower(detail), "access is denied")) {
+		hint = " Windows file is locked by a running process. Stop the proxy with 'tokless proxy down' before installing or upgrading."
+	} else if nativeRisk {
 		hint = " Rust/native toolchain may be required on this platform. Manual: " + strings.Join(append([]string{util.HeadroomPathsResolved().UV}, headroomInstallArgs(false)...), " ")
 	}
-	detail := strings.TrimSpace(result.Stderr)
 	if detail == "" {
 		detail = strings.TrimSpace(result.Stdout)
 	}
@@ -132,6 +137,10 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		return false, err
 	}
 	if util.HeadroomInstalled() && !opts.Upgrade {
+		if ProxyRunning() {
+			opts.Reportf("already installed", 1)
+			return true, nil
+		}
 		if err := headroomVersionProbe(); err != nil {
 			return false, err
 		}

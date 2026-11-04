@@ -7,7 +7,7 @@ import (
 )
 
 func TestUpdateToolFlowSelectionAndInstallation(t *testing.T) {
-	for _, id := range []string{"projectmem", "headroom"} {
+	for _, id := range []string{"headroom"} {
 		needsInstall, _, _ := updateToolFlow(id, util.VersionInfo{}, nil)
 		if !needsInstall {
 			t.Errorf("%s missing install despite unknown latest version", id)

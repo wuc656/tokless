@@ -15,13 +15,18 @@ tokless-linux-arm64 linux arm64
 tokless-darwin-x64 darwin amd64
 tokless-darwin-arm64 darwin arm64
 tokless-windows-x64.exe windows amd64
+toklessw-windows-x64.exe windows amd64
 "
 
 echo "$TARGETS" | while read -r asset goos goarch; do
   [ -z "$asset" ] && continue
   printf 'compiling %s (%s/%s) … ' "$asset" "$goos" "$goarch"
+  EXTRA_LDFLAGS=""
+  if [[ "$asset" == *toklessw* ]]; then
+    EXTRA_LDFLAGS="-H windowsgui"
+  fi
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-    go build -trimpath -ldflags "-s -w -X ${PKG}.Version=${VERSION}" \
+    go build -trimpath -ldflags "${EXTRA_LDFLAGS} -s -w -X ${PKG}.Version=${VERSION}" \
     -o "${OUT}/${asset}" ./cmd/tokless
   echo "ok"
 done

@@ -143,7 +143,7 @@ func TestRunInitPersistsSelectionAndReusesIt(t *testing.T) {
 	withSelHome(t)
 	seedAgentInstalled(t, "claude")
 
-	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"principles", "context-mode"}}); code != 0 {
+	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"rtk", "context-mode"}}); code != 0 {
 		t.Fatalf("RunInit returned %d", code)
 	}
 	saved := util.LoadSelection()
@@ -153,10 +153,6 @@ func TestRunInitPersistsSelectionAndReusesIt(t *testing.T) {
 	if !wiredFor(t, "context-mode", "claude") {
 		t.Fatal("selected context-mode not wired")
 	}
-	body := readFileString(t, util.ClaudeCodePaths().Instructions)
-	if !strings.Contains(body, "## Principles") {
-		t.Fatal("selected principles section missing from Claude instructions")
-	}
 
 	// The saved selection must be reused.
 	if code := RunInit(InitOptions{Agents: []string{"claude"}}); code != 0 {
@@ -165,13 +161,7 @@ func TestRunInitPersistsSelectionAndReusesIt(t *testing.T) {
 	if !wiredFor(t, "context-mode", "claude") {
 		t.Fatal("saved-selection re-run dropped context-mode wiring")
 	}
-	body = readFileString(t, util.ClaudeCodePaths().Instructions)
-	if !strings.Contains(body, "## Principles") {
-		t.Fatal("saved-selection re-run dropped principles instructions")
-	}
-	if strings.Contains(body, "## Response Style (caveman)") {
-		t.Fatal("re-run reset selection to full and wired caveman")
-	}
+
 }
 
 // TestExcludedToolUnwireRemovesManagedConfigOnly checks managed-entry removal.
@@ -314,14 +304,11 @@ func TestRunInitSkipsRequestedButNotInstalledAgents(t *testing.T) {
 	// Restrict PATH so ambient agent binaries cannot make the agent look installed.
 	t.Setenv("PATH", t.TempDir())
 
-	if code := RunInit(InitOptions{Agents: []string{"opencode"}, Tools: []string{"principles"}}); code != 0 {
+	if code := RunInit(InitOptions{Agents: []string{"opencode"}, Tools: []string{"rtk"}}); code != 0 {
 		t.Fatalf("RunInit returned %d", code)
 	}
-	if wiredFor(t, "principles", "opencode") {
+	if wiredFor(t, "rtk", "opencode") {
 		t.Fatal("not-installed agent must not be wired")
-	}
-	if util.Exists(util.OpenCodePathsResolved().Instructions) {
-		t.Fatal("not-installed agent must not have instructions written")
 	}
 }
 

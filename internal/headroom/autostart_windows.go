@@ -74,7 +74,7 @@ func parseScheduledTask(raw []byte) (scheduledTask, bool) {
 func scheduledTaskManaged(raw []byte) bool {
 	task, ok := parseScheduledTask(raw)
 	command := filepath.Base(strings.Trim(strings.TrimSpace(task.Actions.Exec.Command), `"`))
-	return ok && (strings.EqualFold(command, "tokless") || strings.EqualFold(command, "tokless.exe")) &&
+	return ok && (strings.EqualFold(command, "tokless") || strings.EqualFold(command, "tokless.exe") || strings.EqualFold(command, "toklessw") || strings.EqualFold(command, "toklessw.exe")) &&
 		strings.TrimSpace(task.Actions.Exec.Arguments) == "__proxy-watch" &&
 		isLimitedRunLevel(task.Principals.Principal.RunLevel)
 }
@@ -93,7 +93,28 @@ func scheduledTaskMatches(raw []byte, bin string) bool {
 	}
 	command := filepath.Clean(strings.Trim(strings.TrimSpace(task.Actions.Exec.Command), `"`))
 	want := filepath.Clean(strings.TrimSpace(bin))
-	return strings.EqualFold(command, want)
+	if strings.EqualFold(command, want) {
+		return true
+	}
+	if toklessw := autostartGuiBinary(bin); toklessw != "" && strings.EqualFold(command, filepath.Clean(toklessw)) {
+		return true
+	}
+	return false
+}
+
+func autostartGuiBinary(bin string) string {
+	dir := filepath.Dir(bin)
+	base := filepath.Base(bin)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	if strings.EqualFold(stem, "toklessw") {
+		return bin
+	}
+	candidate := filepath.Join(dir, stem+"w"+ext)
+	if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+		return candidate
+	}
+	return ""
 }
 
 var queryScheduledTaskState = func() ([]byte, error) {
@@ -115,13 +136,20 @@ func scheduledTaskRunning() (bool, error) {
 		}
 		return false, err
 	}
-	switch strings.ToLower(strings.TrimSpace(records[0][len(records[0])-1])) {
-	case "running":
+	rawState := records[0][len(records[0])-1]
+	lower := strings.ToLower(strings.TrimSpace(rawState))
+	switch {
+	case lower == "running" || strings.Contains(rawState, "執行") || strings.Contains(rawState, "运行") ||
+		strings.Contains(rawState, "\xb0\xf5\xa6\xe6\xa4\xa4") || strings.Contains(rawState, "\xd4\xcb\xd0\xd0"):
 		return true, nil
-	case "ready", "queued", "disabled":
+	case lower == "ready" || lower == "queued" || lower == "disabled" ||
+		strings.Contains(rawState, "就緒") || strings.Contains(rawState, "就绪") ||
+		strings.Contains(rawState, "\xb4\x4e\xba\xfc") || strings.Contains(rawState, "\xbe\xcd\xd0\xf7") ||
+		strings.Contains(rawState, "已停用") || strings.Contains(rawState, "已禁用") ||
+		strings.Contains(rawState, "已排入"):
 		return false, nil
 	default:
-		return false, fmt.Errorf("unexpected task state %q", records[0][len(records[0])-1])
+		return false, fmt.Errorf("unexpected task state %q", rawState)
 	}
 }
 
@@ -316,9 +344,13 @@ func enableProxyAutostartOS() (err error) {
 	}
 	oldTaskEnded = len(oldTask) > 0
 	taskCreateAttempted = true
+	taskBin := bin
+	if toklessw := autostartGuiBinary(bin); toklessw != "" {
+		taskBin = toklessw
+	}
 	if err := runSchtasks("/create",
 		"/tn", proxyAutostartTask,
-		"/tr", `"`+bin+`" __proxy-watch`,
+		"/tr", `"`+taskBin+`" __proxy-watch`,
 		"/sc", "ONLOGON",
 		"/rl", "LIMITED",
 		"/f"); err != nil {

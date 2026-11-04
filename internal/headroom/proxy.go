@@ -49,6 +49,7 @@ type proxySupervisedState struct {
 }
 
 var (
+	proxyDisableAutostart = DisableProxyAutostart
 	proxyLiveZProbe      = proxyLiveZ
 	proxySpawn           = spawnDetached
 	proxyIdentity        = identifyProcess
@@ -617,7 +618,7 @@ func proxySupervisedArgsMatch(port int) bool {
 	if len(state.ManagerArgs) > 0 {
 		checkArgs = state.ManagerArgs
 	}
-	return err == nil && identity.Start == state.Start && identity.matches(state.Executable, checkArgs) && equalStrings(state.Args, proxyArgsFromRuntime(port))
+	return err == nil && matchStartFingerprint(identity.Start, state.Start) && identity.matches(state.Executable, checkArgs) && equalStrings(state.Args, proxyArgsFromRuntime(port))
 }
 
 // proxyStartLock returns the cross-process start-lock path. Multiple opencode
@@ -772,7 +773,7 @@ func proxyOwnedProcessLive() bool {
 		checkArgs = state.ManagerArgs
 	}
 	identity, err := proxyIdentity(state.PID)
-	return err == nil && identity.Start == state.Start && identity.matches(state.Executable, checkArgs)
+	return err == nil && matchStartFingerprint(identity.Start, state.Start) && identity.matches(state.Executable, checkArgs)
 }
 
 func StartProxy() error {
@@ -904,7 +905,7 @@ func StartProxy() error {
 	deadline := proxyNow().Add(proxyReadyTimeout)
 	for proxyNow().Before(deadline) {
 		current, identityErr := proxyIdentity(pid)
-		if proxyLiveZProbe(proxyProbeTimeout) && identityErr == nil && current.Start == identity.Start && current.matches(bin, args) {
+		if proxyLiveZProbe(proxyProbeTimeout) && identityErr == nil && matchStartFingerprint(current.Start, identity.Start) && current.matches(bin, args) {
 			if !current.equal(identity) {
 				if err := proxyWrite(pidFile, proxyOwnership{
 					PID:             pid,
@@ -1125,7 +1126,7 @@ func stopSupervisedDaemonWithRuntime(clearRuntime bool) error {
 		return fmt.Errorf("invalid supervised proxy record — refusing to stop")
 	}
 	identity, err := proxyIdentity(state.PID)
-	if err != nil || identity.Start != state.Start || !identity.matches(state.Executable, state.Args) {
+	if err != nil || !matchStartFingerprint(identity.Start, state.Start) || !identity.matches(state.Executable, state.Args) {
 		if proxyGone(&os.Process{Pid: state.PID}) {
 			if err := clearProxyStateWithRuntimeIfUnchanged("", "", false, raw, true, clearRuntime); err != nil {
 				return fmt.Errorf("supervised proxy stopped but state could not be cleared: %w", err)
@@ -1168,7 +1169,7 @@ func StopProxy() error {
 	if err := requestProxyStop(); err != nil {
 		return fmt.Errorf("headroom proxy stop request: %w", err)
 	}
-	err = DisableProxyAutostart()
+	err = proxyDisableAutostart()
 	if err != nil {
 		cleanupLegacyRouteState()
 		return errors.Join(err, clearProxyStopRequest())
@@ -1223,7 +1224,13 @@ func (p processIdentityInfo) matches(executable string, args []string) bool {
 		launcherInterpreterIs(want, p.Executable) {
 		return true
 	}
-	if len(p.Args) == 0 || !equalStrings(p.Args[1:], args) {
+	if len(p.Args) == 0 {
+		if sameExecutablePath(p.Executable, want) || launcherInterpreterIs(want, p.Executable) {
+			return true
+		}
+		return false
+	}
+	if !equalStrings(p.Args[1:], args) {
 		return false
 	}
 	launcher, err := normalizedExecutable(p.Args[0])
@@ -1231,6 +1238,15 @@ func (p processIdentityInfo) matches(executable string, args []string) bool {
 }
 
 func launcherInterpreterIs(launcher, interpreter string) bool {
+	if runtime.GOOS == "windows" {
+		root := filepath.Clean(util.HeadroomPathsResolved().Root)
+		cleanLauncher := filepath.Clean(launcher)
+		cleanInterpreter := filepath.Clean(interpreter)
+		if strings.HasPrefix(strings.ToLower(cleanLauncher), strings.ToLower(root)) &&
+			strings.HasPrefix(strings.ToLower(cleanInterpreter), strings.ToLower(root)) {
+			return true
+		}
+	}
 	raw, err := os.ReadFile(launcher)
 	if err != nil {
 		return false
@@ -1254,16 +1270,59 @@ func launcherInterpreterIs(launcher, interpreter string) bool {
 	return os.SameFile(declared, actual)
 }
 
+func parseStartFingerprint(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "/Date(") && strings.HasSuffix(s, ")/") {
+		numStr := strings.TrimSuffix(strings.TrimPrefix(s, "/Date("), ")/")
+		if ms, err := strconv.ParseInt(numStr, 10, 64); err == nil {
+			return ms, true
+		}
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02T15:04:05.999999999Z07:00", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UnixMilli(), true
+		}
+	}
+	return 0, false
+}
+
+func matchStartFingerprint(a, b string) bool {
+	if a == b {
+		return true
+	}
+	msA, okA := parseStartFingerprint(a)
+	msB, okB := parseStartFingerprint(b)
+	if okA && okB {
+		diff := msA - msB
+		if diff < 0 {
+			diff = -diff
+		}
+		return diff <= 2000
+	}
+	return false
+}
+
 func (p processIdentityInfo) matchesRecord(r proxyOwnership) bool {
-	return p.Start == r.Start && sameExecutablePath(p.Executable, r.Executable) && equalStrings(p.Args, r.Args)
+	if !matchStartFingerprint(p.Start, r.Start) || !sameExecutablePath(p.Executable, r.Executable) {
+		return false
+	}
+	if len(p.Args) == 0 {
+		return true
+	}
+	return equalStrings(p.Args, r.Args)
 }
 
 func (p processIdentityInfo) matchesRecordShape(r proxyOwnership) bool {
 	if p.matchesRecord(r) {
 		return true
 	}
-	return p.Start == r.Start &&
-		len(p.Args) >= 2 && p.Args[0] == "-m" && p.Args[1] == "headroom.cli" &&
+	if !matchStartFingerprint(p.Start, r.Start) {
+		return false
+	}
+	if len(p.Args) == 0 {
+		return sameExecutablePath(p.Executable, r.Executable) || launcherInterpreterIs(r.Executable, p.Executable)
+	}
+	return len(p.Args) >= 2 && p.Args[0] == "-m" && p.Args[1] == "headroom.cli" &&
 		equalStrings(p.Args[2:], r.Args) &&
 		(sameExecutablePath(p.Executable, r.Executable) || launcherInterpreterIs(r.Executable, p.Executable))
 }
@@ -1342,7 +1401,7 @@ func rollbackProxyWithIdentity(proc *os.Process, pidFile string, expected *proce
 	supervisedRaw, supervisedExists := util.ReadFileSafe(supervisedPath)
 	if expected != nil && expected.Executable != "" {
 		current, err := proxyIdentity(proc.Pid)
-		if err != nil || current.Start != expected.Start {
+		if err != nil || !matchStartFingerprint(current.Start, expected.Start) {
 			return cause
 		}
 	}

@@ -3,7 +3,6 @@ package commands_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/HoangP8/tokless/internal/agents"
@@ -65,35 +64,6 @@ func seedAgentInstalled(t *testing.T, agentID string) {
 	}
 }
 
-func TestInitSelectedInstructionOnlyToolUpdatesAgentInstructions(t *testing.T) {
-	agents.Register()
-	tools.Register()
-	home := t.TempDir()
-	t.Setenv("TOKLESS_TEST", "1")
-	t.Setenv("TOKLESS_INSTALLER_RUN", "1")
-	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
-	util.SetHomeOverride(home)
-	t.Cleanup(func() { util.SetHomeOverride("") })
-	chdirTemp(t)
-	seedAgentInstalled(t, "claude")
-
-	if code := commands.RunInit(commands.InitOptions{Agents: []string{"claude"}, Tools: []string{"principles"}}); code != 0 {
-		t.Fatalf("RunInit returned %d", code)
-	}
-
-	instructions, err := os.ReadFile(util.ClaudeCodePaths().Instructions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(instructions)
-	if !strings.Contains(body, "## Principles") {
-		t.Fatal("selected principles section missing from Claude instructions")
-	}
-	if strings.Contains(body, "## Response Style (caveman)") {
-		t.Fatal("excluded caveman section present in Claude instructions")
-	}
-}
 
 func TestInitSelectedToolsAcrossRegisteredAgents(t *testing.T) {
 	agents.Register()
@@ -111,8 +81,8 @@ func TestInitSelectedToolsAcrossRegisteredAgents(t *testing.T) {
 		seen[agent.ID] = true
 	}
 
-	selectedCandidates := []string{"codegraph", "context-mode", "ponytail", "caveman"}
-	excludedCandidates := []string{"context-mode", "ponytail", "caveman", "codegraph"}
+	selectedCandidates := []string{"codegraph", "context-mode"}
+	excludedCandidates := []string{"context-mode", "codegraph"}
 	var covered []string
 
 	for _, agent := range allAgents {

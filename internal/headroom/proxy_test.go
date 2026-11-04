@@ -34,9 +34,12 @@ func isolateProxyOps(t *testing.T) {
 	oldGrokProbe := grokProxyLiveZProbe
 	oldServingPID, oldProcessEnv := proxyServingPIDProbe, proxyProcessEnv
 	oldFind := proxyFindProcess
+	oldDisable := proxyDisableAutostart
+	proxyDisableAutostart = func() error { return nil }
 	proxyFindProcess = func(pid int) (*os.Process, error) { return &os.Process{Pid: pid}, nil }
 	proxyWait = func(*os.Process) error { return os.ErrProcessDone }
 	t.Cleanup(func() {
+		proxyDisableAutostart = oldDisable
 		proxyLiveZProbe, proxySpawn = oldProbe, oldSpawn
 		grokProxyLiveZProbe = oldGrokProbe
 		proxyIdentity, proxyKill = oldIdentity, oldKill

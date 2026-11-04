@@ -135,6 +135,13 @@ if ($expanded -notcontains $destDir.TrimEnd("\")) {
 }
 $key.Close()
 
+$wAsset = "toklessw-windows-x64.exe"
+$wUrl   = "https://github.com/$Owner/$Repo/releases/latest/download/$wAsset"
+$wDest  = Join-Path $destDir "toklessw.exe"
+try {
+    Invoke-WebRequest -Uri $wUrl -OutFile $wDest -UseBasicParsing -ErrorAction SilentlyContinue
+} catch {}
+
 $v = & $dest --version 2>$null
 Write-Host "[OK] tokless $v ready -> $dest" -ForegroundColor Green
 

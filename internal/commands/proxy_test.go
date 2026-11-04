@@ -37,12 +37,17 @@ func proxyCmdTestHome(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("test headroom"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	oldGrokRunning, oldConfigured := grokProxyRunning, proxyAutostartConfigured
+	oldGrokRunning, oldConfigured, oldEnabled, oldEnable, oldDisable, oldStop, oldStart := grokProxyRunning, proxyAutostartConfigured, proxyAutostartEnabled, enableProxyAutostart, disableProxyAutostart, stopProxy, startProxy
 	grokProxyRunning = func() bool { return false }
 	proxyAutostartConfigured = func() bool { return false }
+	proxyAutostartEnabled = func() bool { return false }
+	enableProxyAutostart = func() error { return nil }
+	disableProxyAutostart = func() error { return nil }
+	stopProxy = func() error { return nil }
+	startProxy = func() error { return nil }
 	t.Cleanup(func() {
 		util.SetHomeOverride("")
-		grokProxyRunning, proxyAutostartConfigured = oldGrokRunning, oldConfigured
+		grokProxyRunning, proxyAutostartConfigured, proxyAutostartEnabled, enableProxyAutostart, disableProxyAutostart, stopProxy, startProxy = oldGrokRunning, oldConfigured, oldEnabled, oldEnable, oldDisable, oldStop, oldStart
 	})
 }
 

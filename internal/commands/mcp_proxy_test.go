@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/HoangP8/tokless/internal/tools"
 )
 
 func TestMcpChildEnvPassThrough(t *testing.T) {
@@ -395,13 +394,13 @@ func TestMCPBothInitializeResponsesStayRewritten(t *testing.T) {
 	var upstream, discarded bytes.Buffer
 	input := `{"jsonrpc":"2.0","id":"a","method":"initialize","params":{}}` + "\n" +
 		`{"jsonrpc":"2.0","id":"b","method":"initialize","params":{}}` + "\n"
-	if err := scanMcpInput(strings.NewReader(input), &upstream, &discarded, ids, projectmemTools); err != nil {
+	if err := scanMcpInput(strings.NewReader(input), &upstream, &discarded, ids, contextModeTools); err != nil {
 		t.Fatal(err)
 	}
 	responses := `{"jsonrpc":"2.0","id":"a","result":{"protocolVersion":"2024-11-05","instructions":"upstream text"}}` + "\n" +
 		`{"jsonrpc":"2.0","id":"b","result":{"protocolVersion":"2024-11-05","instructions":"upstream text"}}` + "\n"
 	var output bytes.Buffer
-	if err := scanMcpOutput(strings.NewReader(responses), &output, ids, projectmemTools, func() string { return "rewritten instructions" }); err != nil {
+	if err := scanMcpOutput(strings.NewReader(responses), &output, ids, contextModeTools, func() string { return "rewritten instructions" }); err != nil {
 		t.Fatal(err)
 	}
 	raw := output.String()
@@ -539,97 +538,6 @@ func TestBoundedContextModeProxyReturnsWhenUpstreamCloses(t *testing.T) {
 	}
 }
 
-func TestProjectmemPolicyExposesWriterToolsOnly(t *testing.T) {
-	allowed := mcpToolPolicies["projectmem"]
-	want := map[string]bool{
-		"log_issue": true, "record_attempt": true, "record_fix": true,
-		"add_decision": true, "add_note": true,
-	}
-	if len(allowed) != len(want) {
-		t.Fatalf("policy = %v, want %d tools", allowed, len(want))
-	}
-	for _, name := range allowed {
-		if !want[name] {
-			t.Fatalf("unexpected tool in policy: %s", name)
-		}
-	}
-	for _, hidden := range []string{
-		"get_project_map", "get_context", "precheck_file", "get_instructions",
-		"get_plan", "get_issue", "get_score", "get_global_gotchas",
-		"list_projects", "current_project", "search_events", "get_summary",
-	} {
-		if isAllowedMcpTool(hidden, allowed) {
-			t.Fatalf("reader tool leaked into policy: %s", hidden)
-		}
-	}
-}
-
-func TestProjectmemInitializeInstructionsRewrittenAndHiddenCallsDenied(t *testing.T) {
-	dir := t.TempDir()
-	upstream := filepath.Join(dir, "upstream.go")
-	source := `package main
-import ("bufio"; "encoding/json"; "os")
-func main() {
- s := bufio.NewScanner(os.Stdin)
- for s.Scan() {
-  var r map[string]json.RawMessage; json.Unmarshal(s.Bytes(), &r)
-  var method string; json.Unmarshal(r["method"], &method)
-  switch method {
-  case "initialize":
-   os.Stdout.Write([]byte(` + "`" + `{"jsonrpc":"2.0","id":"init-1","result":{"protocolVersion":"2024-11-05","instructions":"call get_instructions() now"}}` + "`" + `+"\n"))
-  case "tools/list":
-	os.Stdout.Write([]byte(` + "`" + `{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"get_project_map"},{"name":"log_issue"},{"name":"record_attempt"},{"name":"record_fix"},{"name":"add_decision"},{"name":"add_note"},{"name":"search_events"},{"name":"get_summary"}]}}` + "`" + `+"\n"))
-  case "tools/call":
-   os.Stdout.Write([]byte(` + "`" + `{"jsonrpc":"2.0","id":` + "`" + `+string(r["id"])+` + "`" + `,"result":{"content":[{"type":"text","text":"forwarded"}]}}` + "`" + `+"\n"))
-  }
- }
-}`
-	if err := os.WriteFile(upstream, []byte(source), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	input := bytes.NewBufferString(strings.Join([]string{
-		`{"jsonrpc":"2.0","id":"init-1","method":"initialize","params":{}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_project_map"}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"add_note"}}`,
-	}, "\n") + "\n")
-	var output bytes.Buffer
-	if code := runMcpProxyIO("", "go", []string{"go", "run", upstream}, nil, input, &output, io.Discard, "projectmem"); code != 0 {
-		t.Fatalf("proxy exit code = %d", code)
-	}
-	raw := output.String()
-	if !strings.Contains(raw, "projectmem writer tools: log_issue") || strings.Contains(raw, "call get_instructions() now") {
-		t.Fatalf("initialize instructions not rewritten: %s", raw)
-	}
-	var responses []map[string]any
-	for _, line := range bytes.Split(bytes.TrimSpace(output.Bytes()), []byte("\n")) {
-		var response map[string]any
-		if err := json.Unmarshal(line, &response); err != nil {
-			t.Fatalf("decode response %q: %v", line, err)
-		}
-		responses = append(responses, response)
-	}
-	if len(responses) != 4 {
-		t.Fatalf("responses = %d, want 4: %s", len(responses), raw)
-	}
-	byID := map[string]map[string]any{}
-	for _, response := range responses {
-		byID[fmt.Sprint(response["id"])] = response
-	}
-	tools := byID["2"]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != len(projectmemTools) {
-		t.Fatalf("tools = %v, want %v", tools, projectmemTools)
-	}
-	errObj := byID["3"]["error"].(map[string]any)
-	if errObj["code"].(float64) != -32601 || !strings.Contains(errObj["message"].(string), "get_project_map") {
-		t.Fatalf("hidden call not denied: %s", raw)
-	}
-	content := byID["4"]["result"].(map[string]any)["content"].([]any)
-	if content[0].(map[string]any)["text"] != "forwarded" {
-		t.Fatalf("allowed tools/call was not forwarded: %s", raw)
-	}
-}
-
 func TestRewriteMcpInstructionsSkipsNullAndNonInitialize(t *testing.T) {
 	if _, ok := rewriteMcpInstructions([]byte(`{"jsonrpc":"2.0","id":1,"result":null}`), "x"); ok {
 		t.Fatal("null result must not be rewritten")
@@ -672,32 +580,6 @@ func TestContextModeInitializeInstructionsForcedEmpty(t *testing.T) {
 	result := decoded["result"].(map[string]any)
 	if result["instructions"] != "" {
 		t.Fatalf("instructions = %q, want empty string", result["instructions"])
-	}
-}
-
-func TestProjectmemInitializeInstructionsRewritten(t *testing.T) {
-	allowed := mcpToolPolicies["projectmem"]
-	ids := &mcpRequestIDs{}
-	var upstream, discarded bytes.Buffer
-	input := `{"jsonrpc":"2.0","id":"init-pm","method":"initialize","params":{}}` + "\n"
-	if err := scanMcpInput(strings.NewReader(input), &upstream, &discarded, ids, allowed); err != nil {
-		t.Fatal(err)
-	}
-	response := `{"jsonrpc":"2.0","id":"init-pm","result":{"protocolVersion":"2024-11-05","instructions":"upstream text about get_instructions"}}` + "\n"
-	instructions := mcpInitializeInstructions("projectmem")
-	if instructions == nil {
-		t.Fatal("projectmem should have an instructions func")
-	}
-	var output bytes.Buffer
-	if err := scanMcpOutput(strings.NewReader(response), &output, ids, allowed, instructions); err != nil {
-		t.Fatal(err)
-	}
-	raw := output.String()
-	if strings.Contains(raw, "upstream text about") {
-		t.Fatalf("upstream instructions not rewritten: %s", raw)
-	}
-	if !strings.Contains(raw, tools.ProjectmemMcpInstructions) {
-		t.Fatalf("expected projectmem instructions in output: %s", raw)
 	}
 }
 
@@ -762,32 +644,6 @@ func TestScrubPrefixProtectionDoesNotMatchLongerName(t *testing.T) {
 	}
 }
 
-func TestScrubProjectmemDescriptionRemovesHiddenReaderNames(t *testing.T) {
-	upstream := `{"jsonrpc":"2.0","id":1,"result":{"tools":[
-		{"name":"log_issue","description":"Log a bug. Use list_projects to find context, then call search_events."},
-		{"name":"list_projects","description":"List all projects."},
-		{"name":"pre_check_file","description":"Check a file."},
-		{"name":"search_events","description":"Search event log."}
-	]}}`
-	allowed := mcpToolPolicies["projectmem"]
-	filtered := filterMcpToolsResponse([]byte(upstream), allowed)
-	raw := string(filtered)
-	if strings.Contains(raw, "list_projects") || strings.Contains(raw, "search_events") || strings.Contains(raw, "pre_check_file") {
-		t.Fatalf("hidden reader tool names leaked into projectmem output: %s", raw)
-	}
-	var parsed map[string]any
-	if err := json.Unmarshal(filtered, &parsed); err != nil {
-		t.Fatal(err)
-	}
-	result := parsed["result"].(map[string]any)
-	tools := result["tools"].([]any)
-	if got := tools[0].(map[string]any)["name"]; got != "log_issue" {
-		t.Fatalf("kept tool name corrupted: got %v", got)
-	}
-	if !strings.Contains(raw, "Log a bug.") {
-		t.Fatalf("log_issue description truncated: %s", raw)
-	}
-}
 
 func TestScrubEmptyHiddenSetPassesThroughUnchanged(t *testing.T) {
 	upstream := `{"jsonrpc":"2.0","id":1,"result":{"tools":[
@@ -984,13 +840,3 @@ func TestScrubHiddenNamesAbsentFromResponse(t *testing.T) {
 	}
 }
 
-func TestScrubStaticUniverseProjectmem(t *testing.T) {
-	upstream := `{"jsonrpc":"2.0","id":1,"result":{"tools":[
-		{"name":"log_issue","description":"Run precheck_file first."}
-	]}}`
-	allowed := mcpToolPolicies["projectmem"]
-	filtered := filterMcpToolsResponse([]byte(upstream), allowed)
-	if strings.Contains(string(filtered), "precheck_file") {
-		t.Fatalf("projectmem static-universe name leaked: %s", filtered)
-	}
-}

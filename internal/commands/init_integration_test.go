@@ -25,6 +25,7 @@ func TestInitFailsBeforeWiringWithoutStableTokless(t *testing.T) {
 	t.Setenv("TOKLESS_TEST", "")
 	t.Setenv("TOKLESS_INSTALLER_RUN", "")
 	t.Setenv("PATH", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	util.SetHomeOverride(home)
@@ -463,24 +464,6 @@ func TestInitIdempotent(t *testing.T) {
 	}
 }
 
-func TestCavemanNotTrackable(t *testing.T) {
-	caveman := core.GetTool("caveman")
-	if caveman == nil {
-		t.Fatalf("expected tool 'caveman' to be registered, but it was nil")
-	}
-	if !caveman.NotTrackable {
-		t.Errorf("expected tool 'caveman' to have NotTrackable set to true, but got false")
-	}
-	if !caveman.InstructionOnly {
-		t.Errorf("expected tool 'caveman' to have InstructionOnly set to true, but got false")
-	}
-
-	for _, tool := range core.ListTools() {
-		if tool.InstructionOnly && !tool.NotTrackable {
-			t.Errorf("instruction-only tool %q must have NotTrackable=true", tool.ID)
-		}
-	}
-}
 
 func TestInitPiWiring(t *testing.T) {
 	t.Setenv("TOKLESS_TEST", "1")
@@ -596,7 +579,7 @@ export default async function(pi) { console.log("user ext") }`
 		t.Errorf("AGENTS.md lost user content, got:\n%s", agentsMdStr)
 	}
 	// tokless managed sections present (owner markers)
-	for _, owner := range []string{"caveman", "codegraph", "context-mode", "ponytail"} {
+	for _, owner := range []string{"codegraph", "context-mode"} {
 		if !strings.Contains(agentsMdStr, owner) {
 			t.Errorf("AGENTS.md missing owner %q, got:\n%s", owner, agentsMdStr)
 		}
@@ -628,7 +611,7 @@ export default async function(pi) { console.log("user ext") }`
 	}
 
 	// --- verify all pi tools report correct state after wiring ---
-	toolIDs := []string{"rtk", "caveman", "codegraph", "context-mode", "ponytail"}
+	toolIDs := []string{"rtk", "codegraph", "context-mode"}
 	for _, id := range toolIDs {
 		tm := core.GetTool(id)
 		if tm == nil {
@@ -703,9 +686,7 @@ func TestPiUnwire(t *testing.T) {
 	}
 
 	unwrapPi("rtk")
-	unwrapPi("caveman")
 	unwrapPi("context-mode")
-	unwrapPi("ponytail")
 	unwrapPi("codegraph")
 
 	if util.Exists(filepath.Join(piDir, "extensions", "rtk.ts")) {

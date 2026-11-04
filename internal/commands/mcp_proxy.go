@@ -531,13 +531,6 @@ var staticToolUniverses = []struct {
 	tool  string
 	names []string
 }{
-	{"projectmem", []string{
-		"add_decision", "add_note", "current_project", "get_context",
-		"get_global_gotchas", "get_instructions", "get_issue", "get_plan",
-		"get_project_map", "get_score", "get_summary", "list_projects",
-		"log_issue", "precheck_file", "record_attempt", "record_fix",
-		"search_events",
-	}},
 	{"context-mode", []string{
 		"ctx_execute", "ctx_execute_file", "ctx_batch_execute", "ctx_search",
 		"ctx_index", "ctx_fetch_and_index", "ctx_stats", "ctx_doctor",

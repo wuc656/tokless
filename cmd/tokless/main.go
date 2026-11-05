@@ -49,8 +49,8 @@ func isSessionBootArg(args []string) bool {
 
 // boolFlags never take a value, so a following word stays a positional.
 var boolFlags = map[string]bool{
-	"dry-run": true, "dryrun": true, "fix": true, "help": true, "no-autostart": true,
-	"offline": true, "uninstall": true, "verbose": true, "version": true, "yes": true,
+	"dry-run": true, "dryrun": true, "fix": true, "force": true, "help": true, "no-autostart": true,
+	"offline": true, "uninstall": true, "verbose": true, "version": true, "yes": true, "y": true,
 }
 
 // parseArgs mirrors the TS parser: --k=v, --k v, --k, -x short bool.
@@ -93,6 +93,7 @@ func helpText() string {
 		"  " + cy("tokless info") + "         Show how tokless was installed, plus paths and config locations\n" +
 		"  " + cy("tokless index") + "        Build per-project indexes (codegraph) in the current dir\n" +
 		"  " + cy("tokless disable") + "      Remove wiring; use --uninstall to also remove installed tools\n" +
+		"  " + cy("tokless remove") + "       Completely remove tokless, all tools, daemons, and data\n" +
 		"  " + cy("tokless proxy") + "        Manage the headroom HTTP proxy: up|down|status|autostart\n\n" +
 		util.C.Bold("Flags:") + "\n" +
 		"  --agents <list>     Limit to a subset: " + fitList(agentSubset, termWidth(), len("  --agents <list>     Limit to a subset: ")) + "\n" +
@@ -391,9 +392,10 @@ func run() int {
 		Agents:  agentList,
 		Tools:   toolList,
 		Agent:   strings.ToLower(strings.TrimSpace(p.flags["agent"])),
-		Yes:     p.bools["yes"],
+		Yes:     p.bools["yes"] || p.bools["y"],
 		DryRun:  p.bools["dry-run"] || p.bools["dryrun"],
 		Verbose: p.bools["verbose"],
+		Force:   p.bools["force"],
 
 		NoAutostart: p.bools["no-autostart"],
 	}
@@ -416,6 +418,8 @@ func run() int {
 	case "uninstall":
 		opts.Uninstall = true
 		code = commands.RunDisable(opts)
+	case "remove":
+		code = commands.RunRemove(opts)
 	case "self-update":
 		code = commands.RunSelfUpdate()
 	default:

@@ -211,6 +211,25 @@ func RunDoctor(offline, fix bool) int {
 	}
 	util.TreeClose()
 
+	legacyCount := ProbeLegacyArtifactsCount()
+	if legacyCount > 0 {
+		util.TreeCorner("Legacy Artifacts")
+		util.TreeLeaf(statusWarn(fmt.Sprintf("%d legacy original Tokless artifact(s) found (projectmem / caveman / ponytail / principles)", legacyCount)))
+		if fix {
+			shouldClean := true
+			if util.IsInteractive() {
+				shouldClean = util.Confirm("Clean up legacy Tokless artifacts now?", true)
+			}
+			if shouldClean {
+				CleanLegacyArtifacts(false)
+				util.TreeLeaf(statusOK("Cleaned legacy Tokless artifacts"))
+			}
+		} else {
+			util.TreeLeaf(util.C.Gray("Run: tokless init or tokless doctor --fix to clean up"))
+		}
+		util.TreeClose()
+	}
+
 	if fix && util.IsInteractive() {
 		if !proxyRunningNow && util.Confirm("Start proxy now?", false) {
 			RunProxyUp(InitOptions{})

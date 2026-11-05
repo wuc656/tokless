@@ -27,6 +27,7 @@ func RunUpdate(opts InitOptions) int {
 	MaybeSelfUpdate(opts)
 
 	cmdHeader("update", "refresh tools to latest")
+	CleanLegacyArtifacts(opts.DryRun)
 
 	if opts.DryRun {
 		util.L.Raw("  " + util.C.Cyan(util.Sym.Info) + " Dry run — probe only, no installs.")

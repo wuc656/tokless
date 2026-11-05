@@ -36,6 +36,7 @@ func piExtensionsDir() string { return filepath.Join(piAgentDir(), "extensions")
 func piMcpFile() string       { return filepath.Join(piAgentDir(), "mcp.json") }
 
 func PiAgentDirResolved() string { return piAgentDir() }
+func PiSkillsDir() string        { return filepath.Join(piAgentDir(), "skills") }
 
 func PiSettingsFile() string { return piSettingsFile() }
 

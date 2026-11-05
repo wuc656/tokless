@@ -22,6 +22,7 @@ type InitOptions struct {
 	Upgrade     bool
 	Uninstall   bool
 	NoAutostart bool
+	Force       bool
 }
 
 func contains(ss []string, s string) bool {
@@ -208,6 +209,7 @@ func RunInit(opts InitOptions) int {
 		util.L.Err("cannot wire agents: no stable tokless executable found; install tokless or put an absolute tokless binary on PATH")
 		return 1
 	}
+	CleanLegacyArtifacts(opts.DryRun)
 	var failures map[string][]string
 
 	allTools := core.ListTools()

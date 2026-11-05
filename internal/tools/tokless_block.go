@@ -53,10 +53,36 @@ func instructionPath(agent string) string {
 }
 
 // legacyBlockHeadings lists old sections removed by unified-body migration.
-var legacyBlockHeadings = []string{"## Process Noise"}
+var legacyBlockHeadings = []string{
+	"## Process Noise",
+	"## Principles",
+	"## 1. Principles",
+	"## Principles (craft) →",
+	"## Principles (craft)",
+	"## Response Style (caveman)",
+	"## 2. Response Style",
+	"## Response Style",
+	"## Style",
+	"## Caveman Style",
+	"## Caveman",
+	"## Voice (caveman)",
+	"## Build Discipline (ponytail)",
+	"## 3. Build Discipline",
+	"## Build Discipline",
+	"## Build Less",
+	"## Ponytail",
+	"## Ponytail: Build Less",
+	"## Reuse Ladder (ponytail)",
+	"## Lazy Ladder (ponytail)",
+	"## Project Memory (projectmem)",
+	"## Project Memory",
+}
 
 var legacyFences = [][2]string{
 	{"<!-- caveman-begin -->", "<!-- caveman-end -->"},
+	{"<!-- ponytail-begin -->", "<!-- ponytail-end -->"},
+	{"<!-- principles-begin -->", "<!-- principles-end -->"},
+	{"<!-- projectmem-begin -->", "<!-- projectmem-end -->"},
 	{"<!-- CODEGRAPH_START -->", "<!-- CODEGRAPH_END -->"},
 	{"<!-- CONTEXT-MODE_START -->", "<!-- CONTEXT-MODE_END -->"},
 	{"<!-- tokless:owners=", ""},
@@ -402,11 +428,22 @@ func agentPathIsCopilotProject(path string) bool {
 func stripIndexPreamble(head []string) []string {
 	for i, line := range head {
 		trimmed := strings.TrimSpace(line)
-		if (trimmed == "# Agent Instructions" || trimmed == "# Agent Operating System" || trimmed == "## Index" || trimmed == "## Index →") && isToklessIndexPreamble(head[i:]) {
+		if (trimmed == "# Agent Instructions" || trimmed == "# Agent Operating System" || trimmed == "## Index" || trimmed == "## Index →") && (isToklessIndexPreamble(head[i:]) || isOnlyToklessHeader(head[i:])) {
 			return head[:i]
 		}
 	}
 	return head
+}
+
+func isOnlyToklessHeader(lines []string) bool {
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" || t == "# Agent Instructions" || t == "# Agent Operating System" || t == "## Index" || t == "## Index →" || t == "Apply on every coding task:" || t == "**Tools (call):**" || t == "**Skills (apply):**" {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func isToklessIndexPreamble(lines []string) bool {
@@ -414,9 +451,16 @@ func isToklessIndexPreamble(lines []string) bool {
 	return strings.Contains(body, "Principles —") ||
 		strings.Contains(body, "Response Style") ||
 		strings.Contains(body, "Code Index") ||
+		strings.Contains(body, "Context Tools") ||
+		strings.Contains(body, "Project Memory") ||
 		strings.Contains(body, "- **Principles**") ||
 		strings.Contains(body, "- **Response Style") ||
 		strings.Contains(body, "- **Code Index")
+}
+
+// StripLegacyExported exposes stripLegacy for cleanup commands.
+func StripLegacyExported(raw string) string {
+	return stripLegacy(raw)
 }
 
 func writeOwnerAtPath(path, owner string) {

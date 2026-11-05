@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/util"
@@ -93,6 +94,9 @@ func TestHeadroomInstallUsesManagedUVState(t *testing.T) {
 	}
 	old := runHeadroom
 	t.Cleanup(func() { runHeadroom = old })
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return false }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 	var calls [][]string
 	runHeadroom = func(command string, args, env []string, ctx context.Context) util.ExecResult {
 		calls = append(calls, append([]string{command}, args...))
@@ -139,6 +143,9 @@ func TestHeadroomVersionProbeRequiresWorkingBinary(t *testing.T) {
 	t.Cleanup(func() { util.SetHomeOverride("") })
 	old := runHeadroom
 	t.Cleanup(func() { runHeadroom = old })
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return false }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 	runHeadroom = func(string, []string, []string, context.Context) util.ExecResult {
 		return util.ExecResult{Code: 127, Stderr: "bad entry point"}
 	}
@@ -170,6 +177,9 @@ func TestHeadroomVersionProbeSkipsSpawnWithMetadata(t *testing.T) {
 	spawns := 0
 	old := runHeadroom
 	t.Cleanup(func() { runHeadroom = old })
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return false }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 	runHeadroom = func(string, []string, []string, context.Context) util.ExecResult {
 		spawns++
 		return util.ExecResult{Code: 127, Stderr: "must not run"}
@@ -202,6 +212,9 @@ func TestHeadroomFailedUpgradeKeepsManagedExecutable(t *testing.T) {
 	}
 	old := runHeadroom
 	t.Cleanup(func() { runHeadroom = old })
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return false }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 	upgradeCalled := false
 	runHeadroom = func(_ string, args, _ []string, _ context.Context) util.ExecResult {
 		if reflect.DeepEqual(args, []string{"--version"}) {
@@ -244,6 +257,27 @@ func TestHeadroomFailureIncludesRemediation(t *testing.T) {
 	wantCommand := strings.Join(append([]string{util.HeadroomPathsResolved().UV}, headroomInstallArgs(false)...), " ")
 	if !strings.Contains(got, "Manual: "+wantCommand) {
 		t.Fatalf("managed install command missing: %q", got)
+	}
+}
+
+func TestHeadroomEnsureInstalledWhenProxyRunningSkipsUpgradeOnFileLock(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+	t.Setenv("TOKLESS_TEST", "")
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return true }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
+
+	p := util.HeadroomPathsResolved()
+	_ = util.EnsureDir(filepath.Dir(p.UV))
+	_ = os.WriteFile(p.UV, []byte("uv"), 0o755)
+	_ = util.EnsureDir(filepath.Dir(util.HeadroomBin()))
+	_ = os.WriteFile(util.HeadroomBin(), []byte("headroom"), 0o755)
+
+	ok, err := EnsureInstalled(core.RunOpts{Upgrade: true})
+	if err != nil || !ok {
+		t.Fatalf("expected install success when proxy is already running, got ok=%v, err=%v", ok, err)
 	}
 }
 

@@ -131,16 +131,16 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		util.L.Sub("[dry-run] would install headroom-ai[proxy] with managed Python 3.13")
 		return true, nil
 	}
+	if util.HeadroomInstalled() && ProxyRunning() {
+		opts.Reportf("already running", 1)
+		return true, nil
+	}
 	opts.Reportf("uv bootstrap", 0.1)
 	uv, err := headroomUV()
 	if err != nil {
 		return false, err
 	}
 	if util.HeadroomInstalled() && !opts.Upgrade {
-		if ProxyRunning() {
-			opts.Reportf("already installed", 1)
-			return true, nil
-		}
 		if err := headroomVersionProbe(); err != nil {
 			return false, err
 		}
@@ -156,6 +156,10 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 	opts.Reportf("package install", 0.5)
 	result := runHeadroom(uv, headroomInstallArgs(opts.Upgrade), util.HeadroomEnv(), ctx)
 	if result.Code != 0 {
+		if util.HeadroomInstalled() && ProxyRunning() {
+			opts.Reportf("already running", 1)
+			return true, nil
+		}
 		return false, headroomFailure("package install", result)
 	}
 	if !util.HeadroomInstalled() {

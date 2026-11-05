@@ -20,7 +20,7 @@ func ompTestHome(t *testing.T) {
 
 func TestOmpToolWiring(t *testing.T) {
 	ompTestHome(t)
-	for _, id := range []string{"caveman", "ponytail", "codegraph", "context-mode", "rtk"} {
+	for _, id := range []string{"codegraph", "context-mode", "rtk"} {
 		tool := lookupTool(t, id)
 		if tool.WireFor["omp"] == nil || tool.UnwireFor["omp"] == nil || tool.VerifyFor["omp"] == nil {
 			t.Fatalf("%s missing OMP binding", id)

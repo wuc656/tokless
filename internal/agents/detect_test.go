@@ -45,7 +45,7 @@ func TestDetectAgentDesktopFallback(t *testing.T) {
 
 func TestDetectAgentDesktopMissing(t *testing.T) {
 	restrictPath(t)
-	d := detectAgent("no-such-cli", t.TempDir(), nil, []string{filepath.Join(t.TempDir(), "absent.app")})
+	d := detectAgent("no-such-cli", filepath.Join(t.TempDir(), "missing"), nil, []string{filepath.Join(t.TempDir(), "absent.app")})
 	if d.Installed {
 		t.Fatalf("nothing present should be not installed, got %+v", d)
 	}
@@ -72,6 +72,7 @@ func TestAgentsDetectVSCodeExtensions(t *testing.T) {
 	home := t.TempDir()
 	util.SetHomeOverride(home)
 	t.Cleanup(func() { util.SetHomeOverride("") })
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	restrictPath(t)
 	for _, test := range []struct {
 		name       string

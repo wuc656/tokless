@@ -19,7 +19,11 @@ func copilotTestHome(t *testing.T) string {
 	t.Setenv("TOKLESS_HOME", home)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	tokless := filepath.Join(home, ".local", "bin", "tokless")
+	if util.IsWin {
+		tokless += ".exe"
+	}
 	if err := os.MkdirAll(filepath.Dir(tokless), 0o755); err != nil {
 		t.Fatal(err)
 	}

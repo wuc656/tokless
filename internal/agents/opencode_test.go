@@ -72,6 +72,9 @@ func TestOpenCodeTransportPluginPathUsesWindowsLayout(t *testing.T) {
 	oldWin := util.IsWin
 	util.IsWin = true
 	t.Cleanup(func() { util.IsWin = oldWin })
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Cleanup(func() { util.SetHomeOverride("") })
 
 	want := filepath.Join(util.HeadroomPathsResolved().Tools, "headroom-ai", "Lib", "site-packages", "headroom", "providers", "opencode", "_dist", "entry.opencode.js")
 	if got := openCodeTransportPluginPath(); got != want {

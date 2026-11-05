@@ -17,7 +17,11 @@ import (
 func assertContextModeProxy(t *testing.T, registration, raw string) {
 	t.Helper()
 	want := util.PickMcpSpawn("context-mode")
-	outer := regexp.MustCompile(`(?s)(?:"command"\s*:\s*(?:"|\[\s*")|command\s*=\s*")` + regexp.QuoteMeta(want.Command) + `"`)
+	cmdPattern := regexp.QuoteMeta(want.Command)
+	if util.IsWin {
+		cmdPattern = strings.ReplaceAll(cmdPattern, `\\`, `(?:\\\\|/)`)
+	}
+	outer := regexp.MustCompile(`(?s)(?:"command"\s*:\s*(?:"|\[\s*")|command\s*=\s*")` + cmdPattern + `"`)
 	if !outer.MatchString(raw) {
 		t.Fatalf("%s outer command is not tokless run-mcp proxy %q:\n%s", registration, want.Command, raw)
 	}

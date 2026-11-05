@@ -488,13 +488,6 @@ func copilotHookOwned(cfg *util.OrderedMap, marker string) bool {
 		} else {
 			expected = map[string]bool{"PreToolUse": true, "preToolUse": true, "PostToolUse": true, "postToolUse": true}
 		}
-		// CLI uses lowercase sessionStart, the VS Code surface SessionStart.
-		if _, ok := hooks.Get("SessionStart"); ok {
-			expected = map[string]bool{"SessionStart": true}
-			expectedTimeout = 10
-		} else {
-			expected = map[string]bool{"sessionStart": true}
-		}
 	case "copilot-hook codegraph-index":
 		if strings.Contains(copilotHookCommandMarker(cfg), "--vscode") {
 			expected = map[string]bool{"SessionStart": true}

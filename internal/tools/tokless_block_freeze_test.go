@@ -26,7 +26,7 @@ func TestWriteOwnerDuringCaptureLogs(t *testing.T) {
 	go func() {
 		logs, _ = util.CaptureLogs(func() error {
 			cur, _ := util.ReadFileSafe(path)
-			wrote = writeOwnerInPath(path, cur, "caveman")
+			wrote = writeOwnerInPath(path, cur, "codegraph")
 			return nil
 		})
 		close(done)
@@ -51,8 +51,8 @@ func TestWriteOwnerDuringCaptureLogs(t *testing.T) {
 	if !strings.Contains(gotStr, "My custom instructions for ponytail.") {
 		t.Fatal("user content lost")
 	}
-	if !strings.Contains(gotStr, "caveman") {
-		t.Fatal("caveman block not appended")
+	if !strings.Contains(gotStr, "codegraph") {
+		t.Fatal("codegraph block not appended")
 	}
 }
 
@@ -68,7 +68,7 @@ func TestWriteOwnerSecondToolDoesNotReprompt(t *testing.T) {
 
 	_, _ = util.CaptureLogs(func() error {
 		cur, _ := util.ReadFileSafe(path)
-		writeOwnerInPath(path, cur, "caveman")
+		writeOwnerInPath(path, cur, "codegraph")
 		return nil
 	})
 
@@ -77,7 +77,7 @@ func TestWriteOwnerSecondToolDoesNotReprompt(t *testing.T) {
 	go func() {
 		_, _ = util.CaptureLogs(func() error {
 			cur, _ := util.ReadFileSafe(path)
-			wrote = writeOwnerInPath(path, cur, "ponytail")
+			wrote = writeOwnerInPath(path, cur, "context-mode")
 			return nil
 		})
 		close(done)
@@ -98,10 +98,10 @@ func TestWriteOwnerSecondToolDoesNotReprompt(t *testing.T) {
 	if !strings.HasPrefix(gotStr, "# Project") {
 		t.Fatal("user head lost on second write")
 	}
-	if !strings.Contains(gotStr, "caveman") || !strings.Contains(gotStr, "ponytail") {
+	if !strings.Contains(gotStr, "codegraph") || !strings.Contains(gotStr, "context-mode") {
 		t.Fatal("both owner blocks not present")
 	}
-	if strings.Count(gotStr, "## Caveman") > 1 {
-		t.Fatal("caveman block duplicated")
+	if strings.Count(gotStr, "## Code Index (codegraph)") > 1 {
+		t.Fatal("codegraph block duplicated")
 	}
 }

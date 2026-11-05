@@ -71,9 +71,6 @@ func runPurge() int {
 }
 
 func runPurgeWith(ops purgeOps) int {
-	if os.Getenv("TOKLESS_TEST") == "1" {
-		return 0
-	}
 	releaseLifecycle, err := ops.acquireLifecycle()
 	if err != nil {
 		util.L.Sub("proxy lifecycle lock: " + err.Error())

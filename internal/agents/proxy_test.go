@@ -48,6 +48,7 @@ func TestProxyAgentApplicableRejectsAbsentClients(t *testing.T) {
 	home := t.TempDir()
 	util.SetHomeOverride(home)
 	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", t.TempDir())
 	t.Setenv("PATH", "")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	t.Setenv("CODEX_HOME", "")

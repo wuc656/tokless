@@ -24,6 +24,6 @@
 
 ## Workflow & Git
 - Build & Vet: `go build ./...` && `go vet ./...`
-- Release: `go build -trimpath -ldflags="-s -w" -o dist/release/tokless-windows-x64.exe ./cmd/tokless` (or `bash scripts/build-release.sh <tag>`)
+- Release: `bash scripts/build-release.sh <tag>` (or `go build -trimpath -ldflags="-s -w -X github.com/HoangP8/tokless/internal/util.Version=<tag>" -o dist/release/tokless-windows-x64.exe ./cmd/tokless`)
 - Test: `go test ./...`
 - Git: All commits and tags must be signed (`git commit -S`, `git tag -s`) using the environment's configured signing method.

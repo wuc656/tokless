@@ -20,7 +20,7 @@ func killProcessTree(c *exec.Cmd) {
 	_ = c.Process.Kill()
 }
 
-func prepareSysProcAttr(c *exec.Cmd, hide bool) {
+func PrepareSysProcAttr(c *exec.Cmd, hide bool) {
 	if hide {
 		if c.SysProcAttr == nil {
 			c.SysProcAttr = &syscall.SysProcAttr{}
@@ -28,4 +28,8 @@ func prepareSysProcAttr(c *exec.Cmd, hide bool) {
 		c.SysProcAttr.CreationFlags |= 0x08000000
 		c.SysProcAttr.HideWindow = true
 	}
+}
+
+func prepareSysProcAttr(c *exec.Cmd, hide bool) {
+	PrepareSysProcAttr(c, hide)
 }

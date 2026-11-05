@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/core"
@@ -348,10 +347,7 @@ func selfDeleteDir(installDir string) error {
 	// Spawn detached cmd to wait ~1.5s for process exit then remove directory.
 	cmdStr := fmt.Sprintf(`ping 127.0.0.1 -n 3 >nul & rmdir /s /q "%s"`, installDir)
 	bgCmd := exec.Command("cmd.exe", "/C", cmdStr)
-	bgCmd.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: 0x08000000,
-		HideWindow:    true,
-	}
+	util.PrepareSysProcAttr(bgCmd, true)
 	return bgCmd.Start()
 }
 

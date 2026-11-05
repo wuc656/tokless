@@ -22,4 +22,6 @@ func killProcessTree(c *exec.Cmd) {
 	_ = c.Process.Kill()
 }
 
+func PrepareSysProcAttr(_ *exec.Cmd, _ bool) {}
+
 func prepareSysProcAttr(_ *exec.Cmd, _ bool) {}

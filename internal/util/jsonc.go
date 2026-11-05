@@ -133,6 +133,7 @@ func (m *OrderedMap) MarshalJSON() ([]byte, error) {
 
 // stripComments removes // and /* */ comments and trailing commas.
 func stripComments(s string) string {
+	s = strings.TrimPrefix(s, "\ufeff")
 	out := make([]byte, 0, len(s))
 	i, n := 0, len(s)
 	inStr, esc := false, false
@@ -186,6 +187,7 @@ func stripComments(s string) string {
 
 // ParseJsonc parses JSON-with-comments into an ordered map.
 func ParseJsonc(text string) (*OrderedMap, error) {
+	text = strings.TrimPrefix(text, "\ufeff")
 	stripped := stripComments(text)
 	m := NewOrderedMap()
 	if strings.TrimSpace(stripped) == "" {
@@ -208,6 +210,7 @@ func TryParseJsonc(text string) *OrderedMap {
 
 // HasJSONCComments reports comment markers outside JSON strings.
 func HasJSONCComments(raw string) bool {
+	raw = strings.TrimPrefix(raw, "\ufeff")
 	inString, escaped := false, false
 	for i := 0; i < len(raw); i++ {
 		c := raw[i]

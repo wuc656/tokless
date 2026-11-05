@@ -2892,3 +2892,22 @@ func TestDroidProxyRemovesReservedEntryWithStash(t *testing.T) {
 		t.Fatalf("droid config not restored:\n%s", got)
 	}
 }
+
+func TestCodexCRLFMatchedMarkedSection(t *testing.T) {
+	endpoint := ProxyEndpointFor("codex")
+	sectionLF := codexProxySection(endpoint, nil)
+	sectionCRLF := strings.ReplaceAll(sectionLF, "\n", "\r\n")
+
+	_, _, okLF := codexMatchedMarkedSection(sectionLF, endpoint)
+	_, _, okCRLF := codexMatchedMarkedSection(sectionCRLF, endpoint)
+	if !okLF {
+		t.Fatalf("expected codexMatchedMarkedSection to match with LF")
+	}
+	if !okCRLF {
+		t.Fatalf("expected codexMatchedMarkedSection to match with CRLF")
+	}
+	baseURLCRLF := codexNamedProviderBaseURL(sectionCRLF, "headroom")
+	if baseURLCRLF == "" {
+		t.Fatalf("expected codexNamedProviderBaseURL to match on CRLF")
+	}
+}

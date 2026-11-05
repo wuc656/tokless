@@ -24,11 +24,7 @@ type copilotFileSnapshot struct {
 
 func copilotTransactionPaths() []string {
 	p := util.CopilotPathsResolved()
-	root, err := filepath.Abs(agents.IdeProjectRoot())
-	if err != nil {
-		root = filepath.Clean(agents.IdeProjectRoot())
-	}
-	return []string{
+	paths := []string{
 		p.McpConfig,
 		agents.CopilotShimDigestPath(),
 		filepath.Join(p.HooksDir, "context-mode.json"),
@@ -36,12 +32,21 @@ func copilotTransactionPaths() []string {
 		filepath.Join(p.HooksDir, "tokless-rtk.json"),
 		p.Instructions,
 		filepath.Join(p.Dir, "permissions-config.json"),
-		filepath.Join(root, ".vscode", "mcp.json"),
-		filepath.Join(root, ".github", "hooks", "context-mode.json"),
-		filepath.Join(root, ".github", "hooks", "tokless-codegraph-index.json"),
-		filepath.Join(root, ".github", "hooks", "tokless-rtk.json"),
-		filepath.Join(root, ".github", "copilot-instructions.md"),
 	}
+	if agents.IdeInProject() {
+		root, err := filepath.Abs(agents.IdeProjectRoot())
+		if err != nil {
+			root = filepath.Clean(agents.IdeProjectRoot())
+		}
+		paths = append(paths,
+			filepath.Join(root, ".vscode", "mcp.json"),
+			filepath.Join(root, ".github", "hooks", "context-mode.json"),
+			filepath.Join(root, ".github", "hooks", "tokless-codegraph-index.json"),
+			filepath.Join(root, ".github", "hooks", "tokless-rtk.json"),
+			filepath.Join(root, ".github", "copilot-instructions.md"),
+		)
+	}
+	return paths
 }
 
 func withCopilotTransaction(fn func() error) error {

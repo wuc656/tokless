@@ -262,3 +262,17 @@ func TestHasJSONCComments(t *testing.T) {
 		t.Fatal("expected comment marker outside string")
 	}
 }
+
+func TestParseJsoncWithBOM(t *testing.T) {
+	input := "\ufeff{\n  \"mcpServers\": {}\n}"
+	cfg, err := ParseJsonc(input)
+	if err != nil {
+		t.Fatalf("ParseJsonc failed on BOM: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil OrderedMap")
+	}
+	if _, ok := cfg.Get("mcpServers"); !ok {
+		t.Fatal("expected mcpServers key to exist")
+	}
+}

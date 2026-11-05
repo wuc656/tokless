@@ -110,3 +110,10 @@ func TestUpsertBlockMerge(t *testing.T) {
 		t.Errorf("expected new args to be added, got:\n%s", merged)
 	}
 }
+
+func TestHasBlockCRLF(t *testing.T) {
+	src := "[model_providers.headroom]\r\nname = \"Headroom\"\r\nbase_url = \"http://127.0.0.1:8787/v1\"\r\n"
+	if !HasBlock(src, "model_providers.headroom") {
+		t.Fatal("HasBlock failed on CRLF block")
+	}
+}

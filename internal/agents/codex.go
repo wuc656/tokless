@@ -187,7 +187,7 @@ func stripCodexRootProviderAssignments(raw string) string {
 	lines := strings.SplitAfter(raw, "\n")
 	var out strings.Builder
 	inRoot := true
-	reHeader := regexp.MustCompile(`^[ \t]*(?:\[\[[^\]\r\n]+\]\]|\[[^\]\r\n]+\])[ \t]*(?:#.*)?$`)
+	reHeader := regexp.MustCompile(`^[ \t]*(?:\[\[[^\]\r\n]+\]\]|\[[^\]\r\n]+\])[ \t]*(?:#.*)?\r?$`)
 	reModel := regexp.MustCompile(`^[ \t]*(?:model_provider|"model_provider"|'model_provider')[ \t]*=`)
 	reURL := regexp.MustCompile(`^[ \t]*(?:openai_base_url|"openai_base_url"|'openai_base_url')[ \t]*=`)
 	for _, line := range lines {
@@ -291,8 +291,9 @@ func codexMatchedMarkedSection(raw, endpoint string) (string, []string, bool) {
 	start := strings.Index(raw, codexMarkerStart)
 	end := strings.Index(raw, codexMarkerEnd) + len(codexMarkerEnd)
 	section := strings.TrimSpace(raw[start:end])
-	extras := codexRootExtras(section)
-	core := strings.TrimSpace(codexWithoutLines(section, extras))
+	normalizedSection := strings.ReplaceAll(section, "\r\n", "\n")
+	extras := codexRootExtras(normalizedSection)
+	core := strings.TrimSpace(codexWithoutLines(normalizedSection, extras))
 	// Legacy BYOK blocks also carried the headroom upstream override header.
 	legacyHeader := `x-headroom-base-url = "` + codexByokURLVar + `"`
 	core = strings.ReplaceAll(core, `, `+legacyHeader, "")
@@ -303,14 +304,14 @@ func codexMatchedMarkedSection(raw, endpoint string) (string, []string, bool) {
 		byok.RouteHeader = codexByokRouteVar
 	}
 	for _, ep := range codexEndpointsFor(endpoint) {
-		ok := core == strings.TrimSpace(codexProxySection(ep, nil)) ||
-			core == strings.TrimSpace(codexProxySection(ep, byok)) ||
-			core == strings.TrimSpace(strings.Replace(
+		ok := core == strings.TrimSpace(strings.ReplaceAll(codexProxySection(ep, nil), "\r\n", "\n")) ||
+			core == strings.TrimSpace(strings.ReplaceAll(codexProxySection(ep, byok), "\r\n", "\n")) ||
+			core == strings.TrimSpace(strings.ReplaceAll(strings.Replace(
 				codexProxySection(ep, nil),
 				"supports_websockets = false",
 				"supports_websockets = true",
 				1,
-			))
+			), "\r\n", "\n"))
 		if ok {
 			return section, extras, true
 		}
@@ -348,12 +349,13 @@ func codexMarkedLegacyBearerProxy(raw, endpoint string) bool {
 	if !codexMarkedProxy(raw) {
 		return false
 	}
-	start := strings.Index(raw, codexMarkerStart)
-	end := strings.Index(raw, codexMarkerEnd) + len(codexMarkerEnd)
-	want := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"$`).ReplaceAllString(
-		strings.TrimSpace(codexProxySectionWithBearer(endpoint)), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
-	actual := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"$`).ReplaceAllString(
-		strings.TrimSpace(raw[start:end]), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
+	rawNorm := strings.ReplaceAll(raw, "\r\n", "\n")
+	start := strings.Index(rawNorm, codexMarkerStart)
+	end := strings.Index(rawNorm, codexMarkerEnd) + len(codexMarkerEnd)
+	want := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"\r?$`).ReplaceAllString(
+		strings.TrimSpace(strings.ReplaceAll(codexProxySectionWithBearer(endpoint), "\r\n", "\n")), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
+	actual := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"\r?$`).ReplaceAllString(
+		strings.TrimSpace(rawNorm[start:end]), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
 	return actual == want
 }
 
@@ -362,14 +364,15 @@ func codexLegacyProxy(raw, endpoint string) bool {
 	if block == "" {
 		return false
 	}
-	return strings.TrimSpace(block) == strings.TrimSpace(util.RenderBlock(codexLegacyProxyBlock(endpoint)))
+	return strings.TrimSpace(strings.ReplaceAll(block, "\r\n", "\n")) == strings.TrimSpace(strings.ReplaceAll(util.RenderBlock(codexLegacyProxyBlock(endpoint)), "\r\n", "\n"))
 }
 
 func codexProviderBlock(raw string) string {
+	rawNorm := strings.ReplaceAll(raw, "\r\n", "\n")
 	header := "[" + codexProxyProvider + "]"
 	start := -1
 	offset := 0
-	for _, line := range strings.SplitAfter(raw, "\n") {
+	for _, line := range strings.SplitAfter(rawNorm, "\n") {
 		if strings.TrimSpace(line) == header {
 			start = offset
 			break
@@ -379,7 +382,7 @@ func codexProviderBlock(raw string) string {
 	if start < 0 {
 		return ""
 	}
-	block := raw[start:]
+	block := rawNorm[start:]
 	if next := regexp.MustCompile(`(?m)^\[`).FindStringIndex(block[len(header):]); next != nil {
 		block = block[:len(header)+next[0]]
 	}
@@ -391,7 +394,9 @@ func codexUnmarkedCurrentProxy(raw, endpoint string, byok *openCodeBYOK) bool {
 	if block == "" {
 		return false
 	}
-	return strings.TrimSpace(block) == strings.TrimSpace(util.RenderBlock(codexProxyBlock(endpoint, byok)))
+	blockNorm := strings.TrimSpace(strings.ReplaceAll(block, "\r\n", "\n"))
+	targetNorm := strings.TrimSpace(strings.ReplaceAll(util.RenderBlock(codexProxyBlock(endpoint, byok)), "\r\n", "\n"))
+	return blockNorm == targetNorm
 }
 
 func codexUnmarkedLegacyBearerProxy(raw, endpoint string) bool {
@@ -399,10 +404,11 @@ func codexUnmarkedLegacyBearerProxy(raw, endpoint string) bool {
 	if block == "" {
 		return false
 	}
-	want := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"$`).ReplaceAllString(
-		strings.TrimSpace(util.RenderBlock(codexProxyBlockWithBearer(endpoint))), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
-	actual := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"$`).ReplaceAllString(
-		strings.TrimSpace(block), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
+	blockNorm := strings.TrimSpace(strings.ReplaceAll(block, "\r\n", "\n"))
+	want := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"\r?$`).ReplaceAllString(
+		strings.TrimSpace(strings.ReplaceAll(util.RenderBlock(codexProxyBlockWithBearer(endpoint)), "\r\n", "\n")), `experimental_bearer_token = "__TOKLESS_BEARER__"`)
+	actual := regexp.MustCompile(`(?m)^experimental_bearer_token = "[^"]*"\r?$`).ReplaceAllString(
+		blockNorm, `experimental_bearer_token = "__TOKLESS_BEARER__"`)
 	return actual == want
 }
 
@@ -427,7 +433,7 @@ func codexByokFlavor(raw string) *openCodeBYOK {
 func insertCodexBlockAtRoot(content, block string) string {
 	block = strings.TrimSpace(block)
 	lines := strings.Split(content, "\n")
-	headerRe := regexp.MustCompile(`^[ \t]*(?:\[\[[^\]\r\n]+\]\]|\[[^\]\r\n]+\])[ \t]*(?:#.*)?$`)
+	headerRe := regexp.MustCompile(`^[ \t]*(?:\[\[[^\]\r\n]+\]\]|\[[^\]\r\n]+\])[ \t]*(?:#.*)?\r?$`)
 	for i, line := range lines {
 		if headerRe.MatchString(line) {
 			head := strings.Join(lines[:i], "\n")
@@ -474,9 +480,10 @@ func codexTakeoverTarget(raw string) *openCodeBYOK {
 }
 
 func codexNamedProviderBaseURL(raw, id string) string {
+	rawNorm := strings.ReplaceAll(raw, "\r\n", "\n")
 	for _, headerID := range []string{id, strconv.Quote(id), "'" + strings.ReplaceAll(id, "'", "''") + "'"} {
-		re := regexp.MustCompile(`(?m)^\[model_providers\.` + regexp.QuoteMeta(headerID) + `\][ \t]*(?:#.*)?$([\s\S]*?)(?:\n\[|\z)`)
-		m := re.FindStringSubmatch(raw)
+		re := regexp.MustCompile(`(?m)^\[model_providers\.` + regexp.QuoteMeta(headerID) + `\][ \t]*(?:#.*)?\r?$([\s\S]*?)(?:\r?\n\[|\z)`)
+		m := re.FindStringSubmatch(rawNorm)
 		if m == nil {
 			continue
 		}
@@ -555,7 +562,7 @@ func byokProvidersCached() []openCodeBYOK {
 	return discoverCodexBYOK()
 }
 
-var reCodexProviderHeader = regexp.MustCompile(`(?m)^\[model_providers\.((?:"[^"]+")|(?:'(?:[^']|'')+')|[A-Za-z0-9_-]+)\][ \t]*(?:#.*)?$`)
+var reCodexProviderHeader = regexp.MustCompile(`(?m)^\[model_providers\.((?:"[^"]+")|(?:'(?:[^']|'')+')|[A-Za-z0-9_-]+)\][ \t]*(?:#.*)?\r?$`)
 
 func discoverCodexBYOK() []openCodeBYOK {
 	raw, ok := util.ReadFileSafe(util.CodexPathsResolved().Config)

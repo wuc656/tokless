@@ -624,9 +624,14 @@ func ConfigureCopilotMcpSafe(toolID string) (changed bool, file string, err erro
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return false, p.McpConfig, readErr
 	}
-	cfg := util.TryParseJsonc(string(raw))
-	if len(strings.TrimSpace(string(raw))) > 0 && cfg == nil {
-		return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
+	rawStr := string(raw)
+	var cfg *util.OrderedMap
+	if len(strings.TrimSpace(rawStr)) > 0 {
+		var parseErr error
+		cfg, parseErr = util.ParseJsonc(rawStr)
+		if parseErr != nil {
+			return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s: %w", p.McpConfig, parseErr)
+		}
 	}
 	if cfg == nil {
 		cfg = util.NewOrderedMap()
@@ -670,7 +675,7 @@ func RemoveCopilotMcpSafe(toolID string) (bool, error) {
 	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
+		return false, nil
 	}
 	servers, err := copilotMcpServers(cfg, "mcpServers", p.McpConfig)
 	if err != nil {
@@ -850,7 +855,7 @@ func removeCopilotIdeMcpLocked(toolID string) (bool, error) {
 	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
+		return false, nil
 	}
 	serversValue, exists := cfg.Get("servers")
 	if !exists {

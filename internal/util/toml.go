@@ -121,7 +121,7 @@ type blockRange struct{ start, end int }
 
 // findBlockRange locates [header] and the slice up to the next header line.
 func findBlockRange(src, header string) *blockRange {
-	reHeader := regexp.MustCompile(`(?m)^\[\s*` + escapeRe(header) + `\s*\](?:[ \t]*#.*)?$`)
+	reHeader := regexp.MustCompile(`(?m)^\[\s*` + escapeRe(header) + `\s*\](?:[ \t]*#.*)?\r?$`)
 	loc := reHeader.FindStringIndex(src)
 	if loc == nil {
 		return nil
@@ -176,7 +176,7 @@ func stripTomlComment(t string) string {
 		case '\'':
 			inLiteral = true
 		case '#':
-			return strings.TrimRight(t[:i], " \t")
+			return strings.TrimRight(t[:i], " \t\r")
 		}
 	}
 	return t

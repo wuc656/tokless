@@ -300,10 +300,14 @@ func doctorProxyPorts(reports []agentReport, mainRunning bool) []doctorPort {
 	}
 	for _, r := range reports {
 		if r.id == "copilot" {
-			cliURL := "http://127.0.0.1:" + strconv.Itoa(agents.CopilotCLIProxyPort())
-			vscodeURL := "http://127.0.0.1:" + strconv.Itoa(agents.CopilotProxyPort())
-			ports = append(ports, doctorPort{label: fmt.Sprintf("%d Copilot CLI — %s", agents.CopilotCLIProxyPort(), cliURL), url: cliURL, direct: []string{wiringStatus("CLI wrapper", agents.CopilotCLIProxyWired())}})
-			ports = append(ports, doctorPort{label: fmt.Sprintf("%d Copilot VS Code — %s", agents.CopilotProxyPort(), vscodeURL), url: vscodeURL, direct: []string{wiringStatus("VS Code wrapper", agents.CopilotVSCodeProxyWired())}})
+			if agents.CopilotCLIProxyApplicable() || agents.CopilotCLIProxyWired() {
+				cliURL := "http://127.0.0.1:" + strconv.Itoa(agents.CopilotCLIProxyPort())
+				ports = append(ports, doctorPort{label: fmt.Sprintf("%d Copilot CLI — %s", agents.CopilotCLIProxyPort(), cliURL), url: cliURL, direct: []string{wiringStatus("CLI wrapper", agents.CopilotCLIProxyWired())}})
+			}
+			if agents.CopilotVSCodeProxyApplicable() || agents.CopilotVSCodeProxyWired() {
+				vscodeURL := "http://127.0.0.1:" + strconv.Itoa(agents.CopilotProxyPort())
+				ports = append(ports, doctorPort{label: fmt.Sprintf("%d Copilot VS Code — %s", agents.CopilotProxyPort(), vscodeURL), url: vscodeURL, direct: []string{wiringStatus("VS Code wrapper", agents.CopilotVSCodeProxyWired())}})
+			}
 		}
 		if r.id == "grok" {
 			wired := agents.GrokOAuthProxyWired()

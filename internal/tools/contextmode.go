@@ -533,7 +533,10 @@ func ctxVerifyPi() bool {
 }
 
 func ctxVerifyCopilot() bool {
-	return agents.CopilotMcpBounded("context-mode", false) && agents.CopilotMcpBounded("context-mode", true) && agents.HasCopilotContextModeHook() && agents.HasCopilotIdeContextModeHook()
+	if agents.IdeInProject() {
+		return agents.CopilotMcpBounded("context-mode", false) && agents.CopilotMcpBounded("context-mode", true) && agents.HasCopilotContextModeHook() && agents.HasCopilotIdeContextModeHook()
+	}
+	return agents.CopilotMcpBounded("context-mode", false) && agents.HasCopilotContextModeHook()
 }
 
 func ctxVerifyGrok() bool {
@@ -693,14 +696,18 @@ func ctxWireCopilot(opts core.RunOpts) (bool, error) {
 		if err := agents.InstallCopilotContextModeHookSafe(); err != nil {
 			return err
 		}
-		if err := agents.InstallCopilotIdeContextModeHookSafe(); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.InstallCopilotIdeContextModeHookSafe(); err != nil {
+				return err
+			}
 		}
 		if !WriteOwner("copilot", "context-mode") && !HasOwner("copilot", "context-mode") {
 			return fmt.Errorf("failed to write Copilot context-mode owner")
 		}
-		if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -721,14 +728,18 @@ func ctxUnwireCopilot(opts core.RunOpts) (bool, error) {
 		if err := agents.RemoveCopilotContextModeHookSafe(); err != nil {
 			return err
 		}
-		if err := agents.RemoveCopilotIdeContextModeHookSafe(); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.RemoveCopilotIdeContextModeHookSafe(); err != nil {
+				return err
+			}
 		}
 		if err := RemoveOwnerSafe("copilot", "context-mode"); err != nil {
 			return err
 		}
-		if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

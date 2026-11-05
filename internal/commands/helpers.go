@@ -8,7 +8,7 @@ import (
 	"github.com/HoangP8/tokless/internal/util"
 )
 
-const repoURL = "https://github.com/HoangP8/tokless"
+const repoURL = "https://github.com/wuc656/tokless"
 const issuesURL = repoURL + "/issues"
 
 func toolVersionNote(tool *core.ToolManifest) string {

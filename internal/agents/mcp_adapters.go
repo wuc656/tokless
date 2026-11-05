@@ -689,9 +689,14 @@ var copilotMcpAdapter = agentMcpAdapter{
 			return core.McpReply{Changed: changed, File: file, Err: err}
 		}
 		cliChanged, file, cliErr := ConfigureCopilotMcpSafe(req.ToolID)
-		ideChanged, ideFile, ideErr := ConfigureCopilotIdeMcpSafe(req.ToolID)
-		if file == "" {
-			file = ideFile
+		var ideChanged bool
+		var ideErr error
+		if IdeInProject() {
+			var ideFile string
+			ideChanged, ideFile, ideErr = ConfigureCopilotIdeMcpSafe(req.ToolID)
+			if file == "" {
+				file = ideFile
+			}
 		}
 		return core.McpReply{Changed: cliChanged || ideChanged, File: file, Err: errors.Join(cliErr, ideErr)}
 	},
@@ -701,7 +706,11 @@ var copilotMcpAdapter = agentMcpAdapter{
 			return core.McpReply{Changed: err == nil, Err: err}
 		}
 		cliRemoved, cliErr := RemoveCopilotMcpSafe(req.ToolID)
-		ideRemoved, ideErr := RemoveCopilotIdeMcpSafe(req.ToolID)
+		var ideRemoved bool
+		var ideErr error
+		if IdeInProject() {
+			ideRemoved, ideErr = RemoveCopilotIdeMcpSafe(req.ToolID)
+		}
 		return core.McpReply{Changed: cliRemoved || ideRemoved, Err: errors.Join(cliErr, ideErr)}
 	},
 	has: func(req core.McpRequest) bool {
@@ -709,9 +718,15 @@ var copilotMcpAdapter = agentMcpAdapter{
 			return CopilotIdeMcpHas(req.ToolID)
 		}
 		if req.AnyShape {
-			return CopilotMcpHas(req.ToolID) && CopilotIdeMcpHas(req.ToolID)
+			if IdeInProject() {
+				return CopilotMcpHas(req.ToolID) && CopilotIdeMcpHas(req.ToolID)
+			}
+			return CopilotMcpHas(req.ToolID)
 		}
-		return CopilotMcpBounded(req.ToolID, false) && CopilotMcpBounded(req.ToolID, true)
+		if IdeInProject() {
+			return CopilotMcpBounded(req.ToolID, false) && CopilotMcpBounded(req.ToolID, true)
+		}
+		return CopilotMcpBounded(req.ToolID, false)
 	},
 }
 

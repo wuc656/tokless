@@ -487,6 +487,8 @@ func RunInit(opts InitOptions) int {
 				}
 				if res, err := fn(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade}); err == nil {
 					okWire = res
+				} else {
+					util.L.Err(err.Error())
 				}
 				if okWire && !opts.DryRun && !tool.InstructionOnly {
 					if verify, ok := tool.VerifyFor[agentID]; ok {
@@ -527,7 +529,15 @@ func RunInit(opts InitOptions) int {
 				if err != nil {
 					treeSub("rollback failed: " + change.tool.Label + " from " + change.agent + ": " + err.Error())
 				} else if !removed {
-					treeSub("rollback failed: " + change.tool.Label + " from " + change.agent + ": configuration was not removed")
+					stillWired := false
+					if verify, ok := change.tool.VerifyFor[change.agent]; ok {
+						if r := verify(); r != nil {
+							stillWired = *r
+						}
+					}
+					if stillWired {
+						treeSub("rollback failed: " + change.tool.Label + " from " + change.agent + ": configuration was not removed")
+					}
 				}
 			}
 		}

@@ -98,7 +98,10 @@ func codegraphVerifyExtras(agent string) bool {
 		agents.CleanupDeadIdeHooks()
 		return agents.HasAntigravityCodegraphIndexHook()
 	case "copilot":
-		return agents.HasCopilotCodegraphIndexHook() && agents.HasCopilotIdeCodegraphIndexHook()
+		if agents.IdeInProject() {
+			return agents.HasCopilotCodegraphIndexHook() && agents.HasCopilotIdeCodegraphIndexHook()
+		}
+		return agents.HasCopilotCodegraphIndexHook()
 	case "droid":
 		return agents.HasDroidCodegraphIndexHook()
 	case "pi":
@@ -422,17 +425,21 @@ func codegraphWireCopilot(opts core.RunOpts) (bool, error) {
 		if err := agents.InstallCopilotCodegraphIndexHookSafe(); err != nil {
 			return err
 		}
-		if err := agents.InstallCopilotIdeCodegraphIndexHookSafe(); err != nil {
-			return err
-		}
-		if _, _, err := agents.ConfigureCopilotIdeMcpSafe("codegraph"); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.InstallCopilotIdeCodegraphIndexHookSafe(); err != nil {
+				return err
+			}
+			if _, _, err := agents.ConfigureCopilotIdeMcpSafe("codegraph"); err != nil {
+				return err
+			}
 		}
 		if !WriteOwner("copilot", "codegraph") && !HasOwner("copilot", "codegraph") {
 			return fmt.Errorf("failed to write Copilot codegraph owner")
 		}
-		if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
-			return err
+		if agents.IdeInProject() {
+			if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -584,18 +591,22 @@ var codegraph = &core.ToolManifest{
 				if err := agents.RemoveCopilotCodegraphIndexHookSafe(); err != nil {
 					return err
 				}
-				if _, err := agents.RemoveCopilotIdeMcpSafe("codegraph"); err != nil {
-					return err
-				}
-				if err := agents.RemoveCopilotIdeCodegraphIndexHookSafe(); err != nil {
-					return err
+				if agents.IdeInProject() {
+					if _, err := agents.RemoveCopilotIdeMcpSafe("codegraph"); err != nil {
+						return err
+					}
+					if err := agents.RemoveCopilotIdeCodegraphIndexHookSafe(); err != nil {
+						return err
+					}
 				}
 				unwireAutoIndex("copilot")
 				if err := RemoveOwnerSafe("copilot", "codegraph"); err != nil {
 					return err
 				}
-				if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
-					return err
+				if agents.IdeInProject() {
+					if err := agents.SyncCopilotIdeInstructionsSafe(); err != nil {
+						return err
+					}
 				}
 				return nil
 			})

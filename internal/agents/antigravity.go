@@ -323,7 +323,7 @@ func toklessManagedCommand(command string, args ...string) bool {
 	}
 	exe := strings.Trim(fields[0], `"'`)
 	base := strings.ToLower(filepath.Base(strings.ReplaceAll(exe, "\\", "/")))
-	return base == "tokless" || base == "tokless.exe" || strings.HasPrefix(base, "tokless-")
+	return base == "tokless" || base == "tokless.exe" || strings.HasPrefix(base, "tokless-") || base == "tokless.cmd" || base == "tokless.bat"
 }
 
 // InstallAntigravityRtkHook installs the PreToolUse hook for agy.

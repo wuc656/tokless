@@ -1374,20 +1374,28 @@ func rtkWireCopilot() core.AgentFn {
 		err := withCopilotTransaction(func() error {
 			if os.Getenv("TOKLESS_TEST") == "1" {
 				agents.InstallCopilotRtkHook()
-				if err := agents.InstallCopilotIdeRtkHookSafe(); err != nil {
-					return err
+				if agents.IdeInProject() {
+					if err := agents.InstallCopilotIdeRtkHookSafe(); err != nil {
+						return err
+					}
 				}
 				return nil
 			}
 			if err := agents.InstallCopilotRtkHookSafe(); err != nil {
 				return err
 			}
-			return agents.InstallCopilotIdeRtkHookSafe()
+			if agents.IdeInProject() {
+				return agents.InstallCopilotIdeRtkHookSafe()
+			}
+			return nil
 		})
 		if err != nil {
 			return false, err
 		}
-		return agents.HasCopilotRtkHook() && agents.HasCopilotIdeRtkHook(), nil
+		if agents.IdeInProject() {
+			return agents.HasCopilotRtkHook() && agents.HasCopilotIdeRtkHook(), nil
+		}
+		return agents.HasCopilotRtkHook(), nil
 	}
 }
 
@@ -1503,8 +1511,10 @@ var rtk = &core.ToolManifest{
 				if err := agents.RemoveCopilotRtkHookSafe(); err != nil {
 					return err
 				}
-				if err := agents.RemoveCopilotIdeRtkHookSafe(); err != nil {
-					return err
+				if agents.IdeInProject() {
+					if err := agents.RemoveCopilotIdeRtkHookSafe(); err != nil {
+						return err
+					}
 				}
 				return RemoveOwnerSafe("copilot", "rtk")
 			})
@@ -1563,7 +1573,10 @@ var rtk = &core.ToolManifest{
 			return core.BoolPtr(agents.HasAntigravityRtkHook())
 		},
 		"copilot": func() *bool {
-			return core.BoolPtr(agents.HasCopilotRtkHook() && agents.HasCopilotIdeRtkHook())
+			if agents.IdeInProject() {
+				return core.BoolPtr(agents.HasCopilotRtkHook() && agents.HasCopilotIdeRtkHook())
+			}
+			return core.BoolPtr(agents.HasCopilotRtkHook())
 		},
 		"droid": func() *bool {
 			return core.BoolPtr(agents.HasDroidRtkHook())

@@ -102,7 +102,7 @@ func helpText() string {
 		"  --no-autostart      Do not start the headroom proxy at login (with init)\n" +
 		"  --uninstall         With disable, also remove tokless-installed binaries/packages\n" +
 		"  --verbose           Show every step\n\n" +
-		util.C.Gray("Docs: https://github.com/HoangP8/tokless")
+		util.C.Gray("Docs: https://github.com/wuc656/tokless")
 }
 
 var agentSubset = []string{"claude", "opencode", "opencode2", "codex", "antigravity", "copilot", "droid", "grok", "pi", "omp", "kilo", "cline", "cursor", "amp", "kimi", "dsh", "zcode"}

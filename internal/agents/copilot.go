@@ -34,7 +34,11 @@ func ideRoot() string {
 	if err != nil {
 		return "."
 	}
+	home := util.Home()
 	for {
+		if home != "" && filepath.Clean(dir) == filepath.Clean(home) {
+			return "."
+		}
 		for _, marker := range []string{".vscode", ".github", ".git"} {
 			if util.Exists(filepath.Join(dir, marker)) {
 				return dir
@@ -621,7 +625,7 @@ func ConfigureCopilotMcpSafe(toolID string) (changed bool, file string, err erro
 		return false, p.McpConfig, readErr
 	}
 	cfg := util.TryParseJsonc(string(raw))
-	if len(raw) > 0 && cfg == nil {
+	if len(strings.TrimSpace(string(raw))) > 0 && cfg == nil {
 		return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
 	}
 	if cfg == nil {
@@ -661,6 +665,9 @@ func RemoveCopilotMcpSafe(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
 		return false, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
@@ -726,7 +733,7 @@ func configureCopilotIdeMcpLocked(toolID string) (changed bool, file string, err
 		return false, path, readErr
 	}
 	cfg := util.TryParseJsonc(string(raw))
-	if len(raw) > 0 && cfg == nil {
+	if len(strings.TrimSpace(string(raw))) > 0 && cfg == nil {
 		return false, path, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
 	}
 	if cfg == nil {
@@ -838,6 +845,9 @@ func removeCopilotIdeMcpLocked(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
 		return false, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
@@ -936,7 +946,7 @@ func CopilotTransactionFileOwned(path string) bool {
 		}
 		servers, ok := cfg.Get(key)
 		entries, ok := servers.(*util.OrderedMap)
-		if !ok || entries.Len() == 0 || cfg.Len() != 1 {
+		if !ok || cfg.Len() != 1 {
 			return false
 		}
 		for _, toolID := range entries.Keys() {

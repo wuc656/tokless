@@ -151,7 +151,7 @@ func TestConfigurePiMcp(t *testing.T) {
 func TestConfigurePiMcpBuiltinFormatAndMigration(t *testing.T) {
 	setPiTestHome(t)
 	legacy := util.NewOrderedMap()
-	spawn := piMcpSpawn("projectmem")
+	spawn := piMcpSpawn("context-mode")
 	legacy.Set("command", spawn.Command)
 	legacy.Set("args", append(append([]string{}, spawn.Args...), "serve", "--mcp"))
 	legacy.Set("lifecycle", "lazy")
@@ -160,7 +160,7 @@ func TestConfigurePiMcpBuiltinFormatAndMigration(t *testing.T) {
 	user.Set("command", "npx")
 	user.Set("lifecycle", "lazy")
 	servers := util.NewOrderedMap()
-	servers.Set("projectmem", legacy)
+	servers.Set("context-mode", legacy)
 	servers.Set("mine", user)
 	cfg := util.NewOrderedMap()
 	settings := util.NewOrderedMap()
@@ -172,19 +172,19 @@ func TestConfigurePiMcpBuiltinFormatAndMigration(t *testing.T) {
 	_ = util.EnsureDir(filepath.Dir(piMcpFile()))
 	_ = util.WriteFile(piMcpFile(), util.StringifyJSON(cfg))
 
-	if changed, _ := ConfigurePiMcp("projectmem"); !changed {
+	if changed, _ := ConfigurePiMcp("context-mode"); !changed {
 		t.Fatal("legacy adapter entry not migrated")
 	}
 	raw, _ := util.ReadFileSafe(piMcpFile())
 	got := util.TryParseJsonc(raw)
 	sv, _ := got.Get("mcpServers")
-	pm, _ := sv.(*util.OrderedMap).Get("projectmem")
+	pm, _ := sv.(*util.OrderedMap).Get("context-mode")
 	em := pm.(*util.OrderedMap)
 	if !piMcpEntryMatches(em, spawn) {
 		t.Fatalf("entry not in built-in format: %s", raw)
 	}
 	if strings.Contains(util.StringifyJSON(em), "serve") {
-		t.Fatalf("pjm-mcp must not get serve --mcp: %s", raw)
+		t.Fatalf("context-mode must not get serve --mcp: %s", raw)
 	}
 	mine, _ := sv.(*util.OrderedMap).Get("mine")
 	mm := mine.(*util.OrderedMap)
@@ -197,7 +197,7 @@ func TestConfigurePiMcpBuiltinFormatAndMigration(t *testing.T) {
 	if _, ok := got.Get("settings"); ok {
 		t.Fatal("adapter top-level settings block not stripped")
 	}
-	if changed, _ := ConfigurePiMcp("projectmem"); changed {
+	if changed, _ := ConfigurePiMcp("context-mode"); changed {
 		t.Fatal("not idempotent")
 	}
 }

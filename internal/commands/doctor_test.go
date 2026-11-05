@@ -87,7 +87,7 @@ func TestDoctorWrapperWiringDoesNotClaimLiveHealth(t *testing.T) {
 	}
 }
 
-func TestDoctorAgentRowsShowHeadroomBranchesAndProjectmemLocation(t *testing.T) {
+func TestDoctorAgentRowsShowHeadroomBranches(t *testing.T) {
 	home := t.TempDir()
 	util.SetHomeOverride(home)
 	t.Cleanup(func() { util.SetHomeOverride("") })
@@ -508,7 +508,7 @@ func TestDoctorMissingToolsExcludesInstructionOnly(t *testing.T) {
 	t.Cleanup(func() { util.SetHomeOverride("") })
 	missing := doctorMissingTools([]*core.ToolManifest{
 		{
-			Label:           "Caveman",
+			Label:           "Instructions",
 			InstructionOnly: true,
 			VerifyFor: map[string]core.VerifyFn{
 				"agent": func() *bool { return core.BoolPtr(false) },
@@ -563,7 +563,7 @@ func TestDoctorAgentRowsOmitsDeselectedRegularTools(t *testing.T) {
 	if !strings.Contains(rows, "RTK → ") {
 		t.Fatalf("selected RTK row missing: %s", rows)
 	}
-	for _, unwanted := range []string{"CodeGraph", "ContextMode", "ProjectMem", "Headroom"} {
+	for _, unwanted := range []string{"CodeGraph", "ContextMode", "Headroom"} {
 		if strings.Contains(rows, unwanted) {
 			t.Fatalf("deselected tool %q should be omitted: %s", unwanted, rows)
 		}

@@ -187,7 +187,7 @@ func TestExcludedToolUnwireRemovesManagedConfigOnly(t *testing.T) {
 	}
 
 	// Persist a selection that excludes context-mode; the next init must unwind it.
-	if err := util.SaveSelection("selected", []string{"principles"}); err != nil {
+	if err := util.SaveSelection("selected", []string{"rtk"}); err != nil {
 		t.Fatal(err)
 	}
 	if code := RunInit(InitOptions{Agents: []string{"opencode"}}); code != 0 {
@@ -223,10 +223,10 @@ func TestRunInitReportsFailureWhenExcludedUnwireFails(t *testing.T) {
 	withSelHome(t)
 	seedAgentInstalled(t, "claude")
 
-	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"principles", "context-mode"}}); code != 0 {
+	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"rtk", "context-mode"}}); code != 0 {
 		t.Fatalf("seed RunInit returned %d", code)
 	}
-	if err := util.SaveSelection("selected", []string{"principles"}); err != nil {
+	if err := util.SaveSelection("selected", []string{"rtk"}); err != nil {
 		t.Fatal(err)
 	}
 	withUnwireStub(t, "context-mode", "claude", func(core.RunOpts) (bool, error) {
@@ -247,17 +247,17 @@ func TestRunInitDryRunDoesNotPersistOrUnwire(t *testing.T) {
 	withSelHome(t)
 	seedAgentInstalled(t, "claude")
 
-	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"principles", "context-mode"}}); code != 0 {
+	if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"rtk", "context-mode"}}); code != 0 {
 		t.Fatalf("seed RunInit returned %d", code)
 	}
-	if err := util.SaveSelection("selected", []string{"principles"}); err != nil {
+	if err := util.SaveSelection("selected", []string{"rtk"}); err != nil {
 		t.Fatal(err)
 	}
 	if code := RunInit(InitOptions{Agents: []string{"claude"}, DryRun: true}); code != 0 {
 		t.Fatalf("dry-run RunInit returned %d", code)
 	}
 	saved := util.LoadSelection()
-	if saved == nil || len(saved.Tools) != 1 || saved.Tools[0] != "principles" {
+	if saved == nil || len(saved.Tools) != 1 || saved.Tools[0] != "rtk" {
 		t.Fatalf("dry-run rewrote persisted selection: %+v", saved)
 	}
 	if !wiredFor(t, "context-mode", "claude") {

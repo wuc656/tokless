@@ -22,9 +22,9 @@ func TestUninstallSelectiveFlags(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(dir, ".config"))
 	oc := filepath.Join(dir, ".config", "opencode")
 	os.MkdirAll(oc, 0o755)
-	// fake an opencode install (config dir present) + wired caveman + codegraph
+	// fake an opencode install (config dir present) + wired context-mode
 	os.WriteFile(filepath.Join(oc, "opencode.json"),
-		[]byte(`{"plugin":["./plugins/caveman/plugin.js","context-mode"],"mcp":{"caveman-shrink":{"type":"local"},"context-mode":{"type":"local"}}}`), 0o644)
+		[]byte(`{"plugin":["context-mode"],"mcp":{"context-mode":{"type":"local"}}}`), 0o644)
 	
 	code := RunUninstall(InitOptions{Agents: []string{"opencode"}, Tools: []string{"codegraph"}})
 	if code != 0 {

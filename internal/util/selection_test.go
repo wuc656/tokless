@@ -56,7 +56,7 @@ func TestSelectionFullModeSelectsAll(t *testing.T) {
 	if store == nil || store.Mode != "full" {
 		t.Fatalf("expected full mode, got %+v", store)
 	}
-	for _, id := range []string{"rtk", "caveman", "codegraph", "context-mode", "headroom", "ponytail", "projectmem", "principles"} {
+	for _, id := range []string{"rtk", "codegraph", "context-mode", "headroom"} {
 		if !IsToolSelected(id) {
 			t.Errorf("%s should be selected in full mode", id)
 		}

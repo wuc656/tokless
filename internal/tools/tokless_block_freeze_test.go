@@ -15,7 +15,7 @@ func TestWriteOwnerDuringCaptureLogs(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "AGENTS.md")
-	userContent := "# My Project\n\nMy custom instructions for ponytail.\n"
+	userContent := "# My Project\n\nMy custom instructions for the project.\n"
 	if err := os.WriteFile(path, []byte(userContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestWriteOwnerDuringCaptureLogs(t *testing.T) {
 	if !strings.HasPrefix(gotStr, "# My Project") {
 		t.Fatalf("user content overwritten. got head:\n%s", gotStr[:min(80, len(gotStr))])
 	}
-	if !strings.Contains(gotStr, "My custom instructions for ponytail.") {
+	if !strings.Contains(gotStr, "My custom instructions for the project.") {
 		t.Fatal("user content lost")
 	}
 	if !strings.Contains(gotStr, "codegraph") {

@@ -197,12 +197,12 @@ func TestOpenCodeMcpDualShapeDisabledNotWired(t *testing.T) {
 
 func TestConfigureOpenCodeMcpWritesV1WhenOnlyV2Present(t *testing.T) {
 	openCodeTestHome(t)
-	command := openCodeCommandJSON(t, "opencode", "projectmem")
-	body := `{"mcp":{"servers":{"projectmem":{"type":"local","command":` + command + `,"disabled":false}}}}`
+	command := openCodeCommandJSON(t, "opencode", "codegraph")
+	body := `{"mcp":{"servers":{"codegraph":{"type":"local","command":` + command + `,"disabled":false}}}}`
 	if err := util.WriteFile(util.OpenCodePathsResolved().Config, body); err != nil {
 		t.Fatal(err)
 	}
-	changed, _ := ConfigureOpenCodeMcp("projectmem")
+	changed, _ := ConfigureOpenCodeMcp("codegraph")
 	if !changed {
 		t.Fatal("v1 entry is missing — must be written even when v2 is correct")
 	}
@@ -212,9 +212,9 @@ func TestConfigureOpenCodeMcpWritesV1WhenOnlyV2Present(t *testing.T) {
 		t.Fatalf("config unparsable: %s", raw)
 	}
 	mcp, _ := mapChild(cfg, "mcp")
-	if entry, has := mcp.Get("projectmem"); !has {
+	if entry, has := mcp.Get("codegraph"); !has {
 		t.Fatalf("canonical v1 entry not written: %s", raw)
-	} else if em, ok := entry.(*util.OrderedMap); !ok || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode", "projectmem")) {
+	} else if em, ok := entry.(*util.OrderedMap); !ok || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode", "codegraph")) {
 		t.Fatalf("v1 entry not healed to canonical form: %s", raw)
 	}
 }
@@ -225,24 +225,24 @@ func TestConfigureOpenCodeMcpV1WritesRootShape(t *testing.T) {
 	if err := util.WriteFile(path, `{"mcp":{"servers":{}},"theme":"dark"}`); err != nil {
 		t.Fatal(err)
 	}
-	if changed, _ := ConfigureOpenCodeMcpV1("projectmem"); !changed {
+	if changed, _ := ConfigureOpenCodeMcpV1("codegraph"); !changed {
 		t.Fatal("missing v1 entry must be written")
 	}
 	raw, _ := util.ReadFileSafe(path)
 	cfg := util.TryParseJsonc(raw)
 	mcp, _ := mapChild(cfg, "mcp")
-	entry, has := mcp.Get("projectmem")
+	entry, has := mcp.Get("codegraph")
 	if !has {
 		t.Fatalf("v1 entry missing: %s", raw)
 	}
 	em, ok := entry.(*util.OrderedMap)
-	if !ok || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode", "projectmem")) {
+	if !ok || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode", "codegraph")) {
 		t.Fatalf("v1 entry invalid: %s", raw)
 	}
 	if _, has := mapChild(mcp, "servers"); !has {
 		t.Fatalf("existing v2 shape lost: %s", raw)
 	}
-	if changed, _ := ConfigureOpenCodeMcpV1("projectmem"); changed {
+	if changed, _ := ConfigureOpenCodeMcpV1("codegraph"); changed {
 		t.Fatal("second configure must be idempotent")
 	}
 }
@@ -255,7 +255,7 @@ func TestConfigureOpenCodeMcpV2WritesServersShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := util.ReadFileSafe(v1Path)
-	if changed, _ := ConfigureOpenCodeMcpV2("projectmem"); !changed {
+	if changed, _ := ConfigureOpenCodeMcpV2("codegraph"); !changed {
 		t.Fatal("missing v2 entry must be written")
 	}
 	raw, _ := util.ReadFileSafe(v2Path)
@@ -265,9 +265,9 @@ func TestConfigureOpenCodeMcpV2WritesServersShape(t *testing.T) {
 	if !ok {
 		t.Fatalf("v2 servers map missing: %s", raw)
 	}
-	entry, has := servers.Get("projectmem")
+	entry, has := servers.Get("codegraph")
 	em, valid := entry.(*util.OrderedMap)
-	if !has || !valid || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode2", "projectmem")) {
+	if !has || !valid || !openCodeMcpEntryEnabled(em) || !openCodeMcpEntryCommandMatches(em, openCodeMcpCommand("opencode2", "codegraph")) {
 		t.Fatalf("v2 entry invalid: %s", raw)
 	}
 	if v1Path != v2Path {
@@ -327,11 +327,11 @@ func TestRemoveOpenCodeMcpV2RemovesServersOnly(t *testing.T) {
 
 func TestRemoveOpenCodeMcpLeavesForeignEntry(t *testing.T) {
 	openCodeTestHome(t)
-	body := `{"mcp":{"projectmem":{"type":"local","command":["/usr/bin/foreign-mcp","--stdio"],"enabled":true}}}`
+	body := `{"mcp":{"codegraph":{"type":"local","command":["/usr/bin/foreign-mcp","--stdio"],"enabled":true}}}`
 	if err := util.WriteFile(util.OpenCodePathsResolved().Config, body); err != nil {
 		t.Fatal(err)
 	}
-	if RemoveOpenCodeMcp("projectmem") {
+	if RemoveOpenCodeMcp("codegraph") {
 		t.Fatal("foreign entry with a different command must not be removed")
 	}
 	raw, _ := util.ReadFileSafe(util.OpenCodePathsResolved().Config)

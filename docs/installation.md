@@ -26,7 +26,7 @@ Install and configure tokless for this user.
 
    Valid ids: `claude`, `opencode`, `opencode2`, `codex`, `antigravity`, `copilot`, `droid`, `grok`, `pi`, `omp`, `kilo`, `cline`, `cursor`, `amp`, `kimi`, `dsh`, `zcode`.
 
-   Limit tools with `--tools rtk,caveman,ponytail,principles,codegraph,context-mode,headroom,projectmem`. Add `--dry-run` to preview writes without changing anything.
+   Limit tools with `--tools rtk,codegraph,context-mode,headroom`. Add `--dry-run` to preview writes without changing anything.
 
 5. Run `tokless doctor`. Report installed version, configured agents, and any warnings.
 

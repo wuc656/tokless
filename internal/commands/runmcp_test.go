@@ -228,7 +228,7 @@ func createTempOutsideTmpDir(t *testing.T) (dir string, cleanup func()) {
 		break
 	}
 	if root == "" {
-		t.Skipf("no clean writable temp base found (ancestor .projectmem/.git pollution or permissions)")
+		t.Skipf("no clean writable temp base found (ancestor git pollution or permissions)")
 	}
 	sub, err := os.MkdirTemp(root, "empty-*")
 	if err != nil {

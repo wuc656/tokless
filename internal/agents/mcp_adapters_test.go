@@ -334,14 +334,14 @@ func TestCodexMcpAdapterStrictShape(t *testing.T) {
 	}
 
 	p := util.CodexPathsResolved().Config
-	if err := util.WriteFile(p, "[mcp_servers.projectmem]\ncommand = \"pjm-mcp\"\nargs = []\n"); err != nil {
+	if err := util.WriteFile(p, "[mcp_servers.codegraph]\ncommand = \"cg-foreign\"\nargs = []\n"); err != nil {
 		t.Fatal(err)
 	}
-	pm := McpCommand("codex", "projectmem")
-	if a.HasMcp("projectmem", core.WithCommand(pm)) {
-		t.Fatal("foreign projectmem block passed the strict gate")
+	pm := McpCommand("codex", "codegraph")
+	if a.HasMcp("codegraph", core.WithCommand(pm)) {
+		t.Fatal("foreign codegraph block passed the strict gate")
 	}
-	if !a.HasMcp("projectmem", core.WithAnyShape()) {
+	if !a.HasMcp("codegraph", core.WithAnyShape()) {
 		t.Fatal("loose existence gate should accept a foreign block")
 	}
 }
@@ -354,14 +354,14 @@ func TestOpenCodeMcpAdapterAnyShape(t *testing.T) {
 	if err := util.EnsureDir(filepath.Dir(p)); err != nil {
 		t.Fatal(err)
 	}
-	if err := util.WriteFile(p, `{"mcp":{"projectmem":{"type":"local","command":["/usr/bin/foreign"],"enabled":true}}}`); err != nil {
+	if err := util.WriteFile(p, `{"mcp":{"codegraph":{"type":"local","command":["/usr/bin/foreign"],"enabled":true}}}`); err != nil {
 		t.Fatal(err)
 	}
-	pm := McpCommand("opencode", "projectmem")
-	if a.HasMcp("projectmem", core.WithCommand(pm)) {
+	pm := McpCommand("opencode", "codegraph")
+	if a.HasMcp("codegraph", core.WithCommand(pm)) {
 		t.Fatal("foreign command passed the strict gate")
 	}
-	if !a.HasMcp("projectmem", core.WithAnyShape()) {
+	if !a.HasMcp("codegraph", core.WithAnyShape()) {
 		t.Fatal("loose shape gate should accept the v1 entry")
 	}
 }

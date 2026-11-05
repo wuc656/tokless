@@ -89,42 +89,32 @@ https://raw.githubusercontent.com/wuc656/tokless/main/docs/installation.md
 
 ## Tools
 
-8 packages with distinct roles, wired without conflicts. Ranked by GitHub stars.
+4 packages with distinct roles, wired without conflicts. Ranked by GitHub stars.
 
 | Package | ⭐ | Purpose |
 | :--- | :---: | :--- |
-| [principles](https://github.com/multica-ai/andrej-karpathy-skills) | ![](https://img.shields.io/github/stars/multica-ai/andrej-karpathy-skills?style=flat-square&label=) | Karpathy coding rules: think first, simplify, edit surgically, verify. |
-| [ponytail](https://github.com/DietrichGebert/ponytail) | ![](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat-square&label=) | Minimal-code rules: reuse first, avoid speculative work. |
-| [caveman](https://github.com/JuliusBrussee/caveman) | ![](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat-square&label=) | Terse response rules that preserve technical accuracy. |
 | [rtk](https://github.com/rtk-ai/rtk) | ![](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat-square&label=) | Rewrites and compresses command output before it reaches the harness. |
 | [headroom](https://github.com/headroomlabs-ai/headroom) | ![](https://img.shields.io/github/stars/headroomlabs-ai/headroom?style=flat-square&label=) | Local HTTP proxy that compresses large prompts and routes BYOK model traffic. |
 | [codegraph](https://github.com/colbymchenry/codegraph) | ![](https://img.shields.io/github/stars/colbymchenry/codegraph?style=flat-square&label=) | Indexed code graph for source, call paths, and impact. |
 | [context-mode](https://github.com/mksglu/context-mode) | ![](https://img.shields.io/github/stars/mksglu/context-mode?style=flat-square&label=) | Sandboxed context tools with session memory and focused analysis. |
-| [projectmem](https://github.com/riponcm/projectmem) | ![](https://img.shields.io/github/stars/riponcm/projectmem?style=flat-square&label=) | Per-project memory: issues, attempts, fixes, decisions, auto-captured from git. |
 
 ### MCP tools
 
-Three tools run as MCP servers. Headroom and rtk wire through their own mechanisms (proxy, hooks, plugins) — no MCP needed.
+Two tools run as MCP servers. Headroom and rtk wire through their own mechanisms (proxy, hooks, plugins) — no MCP needed.
 
-Upstream those three expose **29 tools**. Tokless spawns each server through a bounded proxy that filters its tool list, so **12 land in your context — 17 are trimmed automatically**, at install, nothing to configure.
+Upstream those two expose **12 tools**. Tokless spawns each server through a bounded proxy that filters its tool list, so **7 land in your context — 5 are trimmed automatically**, at install, nothing to configure.
 
 ```text
 MCP Tools
 ├── CodeGraph · 1/1
 │   └── codegraph_explore
-├── Context Mode · 6/11
-│   ├── ctx_execute
-│   ├── ctx_batch_execute
-│   ├── ctx_execute_file
-│   ├── ctx_index
-│   ├── ctx_search
-│   └── ctx_fetch_and_index
-└── ProjectMem · 5/17
-    ├── log_issue
-    ├── record_attempt
-    ├── record_fix
-    ├── add_decision
-    └── add_note
+└── Context Mode · 6/11
+    ├── ctx_execute
+    ├── ctx_batch_execute
+    ├── ctx_execute_file
+    ├── ctx_index
+    ├── ctx_search
+    └── ctx_fetch_and_index
 ```
 
 ### What gets trimmed
@@ -133,9 +123,6 @@ MCP Tools
 | :--- | :---: | :--- | :--- | :--- |
 | CodeGraph | 1 | ✅ 1 | — | one tool, nothing to cut |
 | Context Mode | 11 | ✅ 6 | ❌ `ctx_stats` · `ctx_doctor` · `ctx_upgrade` · `ctx_insight` · `ctx_purge` | diagnostics and package maintenance — not part of a coding turn |
-| ProjectMem | 17 | ✅ 5 | ❌ `current_project` · `get_context` · `get_global_gotchas` · `get_instructions` · `get_issue` · `get_plan` · `get_project_map` · `get_score` · `get_summary` · `list_projects` · `precheck_file` · `search_events` | its reads arrive before the first prompt |
-
-**ProjectMem is the case that matters.** Its 12 read tools (`get_summary`, `get_plan`, …) are replaced by a memory block pushed at session start — hook, plugin/extension, or rule file depending on the harness. Nothing to call: only the 5 writers stay on the list. `tokless doctor` reports the exposed set.
 
 ## Usage
 
@@ -161,7 +148,7 @@ tokless proxy autostart on | off  # start headroom at login (default: on)
 
 ```text
 Harness ids: claude, opencode, opencode2, codex, antigravity, copilot, droid, grok, pi, omp, kilo, cline, cursor, amp, kimi, dsh, zcode
-Tool ids: rtk, caveman, ponytail, principles, codegraph, context-mode, headroom, projectmem
+Tool ids: rtk, codegraph, context-mode, headroom
 ```
 
 ## Configuration
@@ -172,64 +159,57 @@ Wiring is the product: after install, everything runs on its own — no runtime 
 
 | Tool | How | When |
 | :--- | :--- | :--- |
-| principles · caveman · ponytail | Instruction block (rules file) | every prompt — always in context |
 | rtk | hook · plugin · extension · cordis patch | every Bash command — rewrite + compress output |
 | headroom | local HTTP proxy + route in config | every model API call — compress prompts, route BYOK + OAuth |
 | codegraph | MCP server (`codegraph_explore`) | on demand; index builds at first connect |
 | context-mode | MCP server (`ctx_*`) | on demand — large files / logs stay out of context |
-| projectmem | MCP server + context injection | ~2000-token memory block at session start |
 
 ```text
-INSTALL ─┬─ rules block      principles · caveman · ponytail
-         ├─ MCP entries      codegraph · context-mode · projectmem
+INSTALL ─┬─ MCP entries      codegraph · context-mode
          ├─ rtk mechanism    hook · plugin · extension · patch
          └─ headroom route   local proxy 127.0.0.1:8787
 
-SESSION ─┬─ codegraph index  built on first connect
-         └─ projectmem block injected before the first prompt
+SESSION ─── codegraph index  built on first connect
 
-WORK ────┬─ prompt → rules + project memory ride along every turn
-         ├─ Bash   → rtk rewrites the command and compresses output
+WORK ────┬─ Bash   → rtk rewrites the command and compresses output
          ├─ think  → codegraph_explore: source, callers, blast radius
          ├─ big    → ctx_* keeps large files and logs out of context
          └─ API    → headroom compresses prompts, routes BYOK + Grok OAuth
 ```
 
-Without tokless, the harness re-reads the raw tree every session, Bash output lands uncompressed, and nothing survives between sessions. Tokless inverts all three: indexed code, compressed commands, persistent memory.
+Without tokless, the harness re-reads the raw tree every session and Bash output lands uncompressed. Tokless inverts both: indexed code and compressed commands.
 
-### How tokless connects to harnesses × 8 tools
+### How tokless connects to harnesses × 4 tools
 
-**Instruction** = markdown block · **Rule** = project rule file · **Hook** = PreToolUse / SessionStart command · **Plugin** = JS/TS plugin · **Extension** = harness extension API · **Patch** = cordis insert (dsh) · **MCP** = Model Context Protocol server.
+**Hook** = PreToolUse / SessionStart command · **Plugin** = JS/TS plugin · **Extension** = harness extension API · **Patch** = cordis insert (dsh) · **MCP** = Model Context Protocol server.
 
 <table>
   <thead>
     <tr>
       <th align="left" nowrap>Harness</th>
-      <th align="center">rules<br/><sub>principles · caveman · ponytail</sub></th>
       <th align="center">rtk</th>
       <th align="center">codegraph</th>
       <th align="center">context-mode</th>
       <th align="center">headroom</th>
-      <th align="center">projectmem</th>
     </tr>
   </thead>
   <tbody>
-    <tr><td nowrap><b>Claude Code</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">anthropic-native</td><td align="center">MCP + Hook</td></tr>
-    <tr><td nowrap><b>OpenCode</b></td><td align="center">Instruction</td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Plugin</td></tr>
-    <tr><td nowrap><b>Codex</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Hook</td></tr>
-    <tr><td nowrap><b>Antigravity</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">gemini-native</td><td align="center">MCP + Hook</td></tr>
-    <tr><td nowrap><b>GitHub Copilot</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Hook</td></tr>
-    <tr><td nowrap><b>Factory Droid</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Hook</td></tr>
-    <tr><td nowrap><b>Pi</b></td><td align="center">Instruction</td><td align="center">Extension</td><td align="center">MCP + Ext</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Ext</td></tr>
-    <tr><td nowrap><b>Oh My Pi</b></td><td align="center">Instruction</td><td align="center">Extension</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Ext</td></tr>
-    <tr><td nowrap><b>Cline</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Rule</td></tr>
-    <tr><td nowrap><b>Cursor</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">—</td><td align="center">MCP + Rule</td></tr>
-    <tr><td nowrap><b>Grok Build</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">BYOK + OAuth</td><td align="center">MCP + Rule</td></tr>
-    <tr><td nowrap><b>Kilo Code</b></td><td align="center">Instruction</td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP + Plugin</td></tr>
-    <tr><td nowrap><b>Amp</b></td><td align="center">Instruction</td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">—</td><td align="center">MCP</td></tr>
-    <tr><td nowrap><b>Kimi Code</b></td><td align="center">Instruction</td><td align="center">—</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP</td></tr>
-    <tr><td nowrap><b>ZCode</b></td><td align="center">Instruction</td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP</td></tr>
-    <tr><td nowrap><b>DeepSeek</b></td><td align="center">Instruction</td><td align="center">Patch</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td><td align="center">MCP</td></tr>
+    <tr><td nowrap><b>Claude Code</b></td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">anthropic-native</td></tr>
+    <tr><td nowrap><b>OpenCode</b></td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Codex</b></td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Antigravity</b></td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">gemini-native</td></tr>
+    <tr><td nowrap><b>GitHub Copilot</b></td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Factory Droid</b></td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Pi</b></td><td align="center">Extension</td><td align="center">MCP + Ext</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Oh My Pi</b></td><td align="center">Extension</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Cline</b></td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Cursor</b></td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">—</td></tr>
+    <tr><td nowrap><b>Grok Build</b></td><td align="center">Hook</td><td align="center">MCP + Hook</td><td align="center">MCP</td><td align="center">BYOK + OAuth</td></tr>
+    <tr><td nowrap><b>Kilo Code</b></td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>Amp</b></td><td align="center">Plugin</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">—</td></tr>
+    <tr><td nowrap><b>Kimi Code</b></td><td align="center">—</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>ZCode</b></td><td align="center">Hook</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
+    <tr><td nowrap><b>DeepSeek</b></td><td align="center">Patch</td><td align="center">MCP</td><td align="center">MCP</td><td align="center">openai-compatible</td></tr>
   </tbody>
 </table>
 

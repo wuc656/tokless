@@ -209,7 +209,7 @@ func seedNoAutostartInit(t *testing.T) *autostartCalls {
 }
 
 func TestRunInitNoAutostart(t *testing.T) {
-	opts := InitOptions{Agents: []string{"claude"}, Tools: []string{"principles"}, NoAutostart: true}
+	opts := InitOptions{Agents: []string{"claude"}, Tools: []string{"rtk"}, NoAutostart: true}
 	t.Run("turns preference off and removes entry", func(t *testing.T) {
 		c := seedNoAutostartInit(t)
 		if code := RunInit(opts); code != 0 {
@@ -253,7 +253,7 @@ func TestRunInitStartsAtLoginDisclosure(t *testing.T) {
 			t.Fatal(err)
 		}
 		logs, err := util.CaptureLogs(func() error {
-			if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"principles"}}); code != 0 {
+			if code := RunInit(InitOptions{Agents: []string{"claude"}, Tools: []string{"rtk"}}); code != 0 {
 				return fmt.Errorf("RunInit = %d", code)
 			}
 			return nil

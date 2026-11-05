@@ -10,7 +10,7 @@ tokless/
 └── internal/
     ├── core/           registry + manifests
     ├── agents/         one file per agent (claude, opencode, codex)
-    ├── tools/          one file per tool (rtk, caveman, codegraph, contextmode)
+    ├── tools/          one file per tool (rtk, headroom, codegraph, contextmode)
     ├── commands/       init, doctor, update, disable, selfupdate
     └── util/           config helpers (toml, jsonc, paths, exec, …)
 ```

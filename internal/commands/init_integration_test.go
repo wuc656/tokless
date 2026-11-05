@@ -197,8 +197,8 @@ func TestInitSandboxWiring(t *testing.T) {
 			t.Errorf("hooks.json should not contain context-mode hook %q, got: %s", bad, codexHooksStr)
 		}
 	}
-	if strings.Contains(codexHooksStr, "SessionStart") && !strings.Contains(codexHooksStr, "projectmem-hook claude") {
-		t.Errorf("hooks.json SessionStart must only hold the projectmem hook, got: %s", codexHooksStr)
+	if strings.Contains(codexHooksStr, "SessionStart") {
+		t.Errorf("hooks.json should not contain SessionStart hook, got: %s", codexHooksStr)
 	}
 	if !strings.Contains(codexHooksStr, "rtk-hook codex") {
 		t.Errorf("hooks.json doesn't contain the rtk hook 'rtk-hook codex', got: %s", codexHooksStr)

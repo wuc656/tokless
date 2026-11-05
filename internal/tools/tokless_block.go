@@ -498,9 +498,6 @@ func hasOwnerInRaw(raw, owner string) bool {
 func ownersFromBlocks(blocks []managedSection) []string {
 	var out []string
 	for _, b := range blocks {
-		if b.owner == "principles" {
-			continue
-		}
 		out = append(out, b.owner)
 	}
 	return out

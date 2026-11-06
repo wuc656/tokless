@@ -22,9 +22,18 @@ func codegraphEnsureInstalled(opts core.RunOpts) (bool, error) {
 		return true, nil
 	}
 	opts.Reportf("checking", 0.1)
-	if util.ResolveCodegraphBin() != "" && !opts.Upgrade {
-		opts.Reportf("already installed", 1)
-		return true, nil
+	if util.ResolveCodegraphBin() != "" {
+		if !opts.Upgrade {
+			opts.Reportf("already installed", 1)
+			return true, nil
+		}
+		installedVer := util.NpmInstalledVersionExported("@colbymchenry/codegraph")
+		latestVer := util.NpmLatest("@colbymchenry/codegraph")
+		if installedVer != nil && latestVer != nil && *installedVer == *latestVer {
+			opts.Reportf("ready", 1)
+			util.L.Sub(util.C.Dim("@colbymchenry/codegraph @" + *installedVer + " up to date"))
+			return true, nil
+		}
 	}
 	if opts.DryRun {
 		util.L.Sub("[dry-run] would install @colbymchenry/codegraph globally")
@@ -374,7 +383,7 @@ func codegraphWire(agent string) core.AgentFn {
 			return codegraphVerify(agent), nil
 		}
 		if opts.DryRun {
-			return codegraphRealInstall(opts, agent), nil
+			return true, nil
 		}
 		if agent == "opencode2" {
 			if !codegraphConfigureMcp(agent) {
@@ -392,9 +401,6 @@ func codegraphWire(agent string) core.AgentFn {
 			}
 			writeCodegraphBlock(agent)
 			return codegraphVerify(agent), nil
-		}
-		if ran := codegraphRealInstall(opts, agent); !ran {
-			util.L.Debug("codegraph's own installer failed; writing MCP entry directly")
 		}
 		if agent == "grok" {
 			if !codegraphConfigureMcp(agent) {
@@ -428,9 +434,6 @@ func codegraphWire(agent string) core.AgentFn {
 
 func codegraphWireCopilot(opts core.RunOpts) (bool, error) {
 	err := withCopilotTransaction(func() error {
-		if !isTest() && !codegraphRealInstall(opts, "copilot") {
-			util.L.Debug("codegraph's own installer failed; writing MCP entry directly")
-		}
 		if _, _, err := agents.ConfigureCopilotMcpSafe("codegraph"); err != nil {
 			return err
 		}

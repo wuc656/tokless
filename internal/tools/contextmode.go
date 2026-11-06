@@ -21,9 +21,18 @@ func ctxEnsureInstalled(opts core.RunOpts) (bool, error) {
 		return true, nil
 	}
 	opts.Reportf("checking", 0.1)
-	if util.Which("context-mode") != "" && !opts.Upgrade {
-		opts.Reportf("already installed", 1)
-		return true, nil
+	if util.Which("context-mode") != "" {
+		if !opts.Upgrade {
+			opts.Reportf("already installed", 1)
+			return true, nil
+		}
+		installedVer := util.NpmInstalledVersionExported("context-mode")
+		latestVer := util.NpmLatest("context-mode")
+		if installedVer != nil && latestVer != nil && *installedVer == *latestVer {
+			opts.Reportf("ready", 1)
+			util.L.Sub(util.C.Dim("context-mode @" + *installedVer + " up to date"))
+			return true, nil
+		}
 	}
 	// context-mode needs Node 22+ (better-sqlite3 native prebuild).
 	if !util.NodeAgeAlreadyChecked() {

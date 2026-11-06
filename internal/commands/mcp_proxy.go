@@ -39,19 +39,13 @@ func runMcpProxyIOAfterStart(agent, path string, argv, env []string, input io.Re
 		return runBoundedMcpProxy(cmd, input, output, allowed, mcpInitializeInstructions(tool), afterStart)
 	}
 	cmd.Stdin = input
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		cmd.Stdout = output
-		_ = cmd.Start()
-		return waitExit(cmd)
-	}
+	cmd.Stdout = output
 	if err := cmd.Start(); err != nil {
 		return 1
 	}
 	if afterStart != nil {
 		afterStart()
 	}
-	io.Copy(output, stdout)
 	return waitExit(cmd)
 }
 
@@ -227,10 +221,10 @@ func scanMcpOutput(upstream io.Reader, output io.Writer, listIDs *mcpRequestIDs,
 		if !isValidMCPMessageObject(line) {
 			continue
 		}
-		if filterMcpTools(line) {
+		if bytes.Contains(line, []byte(`"tools"`)) && filterMcpTools(line) {
 			line = filterMcpToolsResponse(line, allowed)
 		}
-		if instructions != nil {
+		if instructions != nil && bytes.Contains(line, []byte(`"protocolVersion"`)) {
 			if id, ok := canonicalMCPID(mcpResponseID(line)); ok && mcpInitIDMatches(listIDs, id) {
 				if rewritten, ok := rewriteMcpInstructions(line, instructions()); ok {
 					line = rewritten
@@ -286,6 +280,9 @@ func rewriteMcpInstructions(line []byte, instructions string) ([]byte, bool) {
 }
 
 func filterMcpTools(line []byte) bool {
+	if !bytes.Contains(line, []byte(`"tools"`)) {
+		return false
+	}
 	var response map[string]json.RawMessage
 	if json.Unmarshal(line, &response) != nil {
 		return false

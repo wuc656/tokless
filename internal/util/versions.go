@@ -88,6 +88,25 @@ func fetchJSON(u string, out any) bool {
 	return json.NewDecoder(resp.Body).Decode(out) == nil
 }
 
+func fetchRegistryJSON(u string, out any) bool {
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "tokless")
+	req.Header.Set("Accept", "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*")
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	return json.NewDecoder(resp.Body).Decode(out) == nil
+}
+
 func strp(s string) *string { return &s }
 
 func pypiLatest(pkg string) *string {
@@ -103,25 +122,20 @@ func pypiLatest(pkg string) *string {
 }
 
 func npmLatest(pkg string) *string {
-	// Primary: ask npm itself, so the user's registry/mirror/proxy/auth from
-	// .npmrc are honored (a hardcoded npmjs.org GET ignores all of that and
-	// fails on mirrored/proxied networks where npm install works fine).
-	if v := npmViewLatest(pkg); v != nil {
-		return v
-	}
-	// Fallback (npm not on PATH): direct registry GET against the configured base.
+	// Fast path: direct registry query with lightweight corgi header (~50ms vs ~2s npm CLI spawn).
 	var data struct {
 		DistTags struct {
 			Latest string `json:"latest"`
 		} `json:"dist-tags"`
 	}
-	if !fetchJSON(npmRegistryBase()+url.QueryEscape(pkg), &data) {
-		return nil
+	if fetchRegistryJSON(npmRegistryBase()+url.QueryEscape(pkg), &data) && data.DistTags.Latest != "" {
+		return strp(data.DistTags.Latest)
 	}
-	if data.DistTags.Latest == "" {
-		return nil
+	// Fallback: ask npm itself (e.g. private registry, mirror, or auth from .npmrc where direct GET returns 401).
+	if v := npmViewLatest(pkg); v != nil {
+		return v
 	}
-	return strp(data.DistTags.Latest)
+	return nil
 }
 
 // npmViewLatest resolves a package's latest version via the npm CLI (nil if npm
@@ -222,6 +236,9 @@ func npmInstalledVersion(pkg string) *string {
 }
 
 func NpmInstalledVersionExported(pkg string) *string { return npmInstalledVersion(pkg) }
+func RtkInstalledVersion() *string                   { return rtkInstalledVersion() }
+func GithubLatestRelease(repo string) *string        { return githubLatestRelease(repo) }
+func NpmLatest(pkg string) *string                   { return npmLatest(pkg) }
 
 // bunInstalledVersion resolves a bun-linked bin (e.g. ~/.bun/bin/<pkg>) to its
 // package.json and reads the version. Also checks ~/.bun/install/global.

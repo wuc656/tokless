@@ -140,12 +140,23 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if util.HeadroomInstalled() && !opts.Upgrade {
-		if err := headroomVersionProbe(); err != nil {
-			return false, err
+	if util.HeadroomInstalled() {
+		if !opts.Upgrade {
+			if err := headroomVersionProbe(); err != nil {
+				return false, err
+			}
+			opts.Reportf("already installed", 1)
+			return true, nil
 		}
-		opts.Reportf("already installed", 1)
-		return true, nil
+		if installedVer := util.HeadroomInstalledVersion(); installedVer != nil {
+			if latestVer := util.LatestVersionFor("headroom"); latestVer != nil && *installedVer == *latestVer {
+				if err := headroomVersionProbe(); err == nil {
+					opts.Reportf("ready", 1)
+					util.L.Sub(util.C.Dim("headroom v" + *installedVer + " up to date"))
+					return true, nil
+				}
+			}
+		}
 	}
 	opts.Reportf("managed Python", 0.3)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

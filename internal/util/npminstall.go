@@ -17,17 +17,31 @@ const defaultRegistryURL = "https://registry.npmjs.org/"
 var npmInstallTimeout = 15 * time.Minute
 var npmConfigTimeout = 30 * time.Second
 
-// npmRegistryBase returns the user's configured npm registry.
+var (
+	npmRegistryMu     sync.Mutex
+	npmRegistryCached string
+	npmRegistrySet    bool
+)
+
+// npmRegistryBase returns the user's configured npm registry, memoized per process.
 func npmRegistryBase() string {
+	npmRegistryMu.Lock()
+	defer npmRegistryMu.Unlock()
+	if npmRegistrySet {
+		return npmRegistryCached
+	}
+	npmRegistrySet = true
 	r := runNpmConfig([]string{"config", "get", "registry"})
 	v := strings.TrimSpace(r.Stdout)
 	if r.Code == 0 && strings.HasPrefix(v, "http") {
 		if !strings.HasSuffix(v, "/") {
 			v += "/"
 		}
+		npmRegistryCached = v
 		return v
 	}
-	return defaultRegistryURL
+	npmRegistryCached = defaultRegistryURL
+	return npmRegistryCached
 }
 
 type registryDoc struct {
@@ -48,6 +62,7 @@ func resolveFromRegistry(pkg, spec string) (string, string, bool) {
 		return "", "", false
 	}
 	req.Header.Set("User-Agent", "tokless")
+	req.Header.Set("Accept", "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*")
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", false
@@ -73,6 +88,11 @@ func resolveFromRegistry(pkg, spec string) (string, string, bool) {
 		return "", "", false
 	}
 	return version, vInfo.Dist.Tarball, true
+}
+
+// ResolveNpmRegistry resolves the version and tarball URL for a package spec via registry HTTP.
+func ResolveNpmRegistry(pkg, spec string) (string, string, bool) {
+	return resolveFromRegistry(pkg, spec)
 }
 
 var npmResolve = resolveFromRegistry

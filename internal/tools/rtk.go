@@ -54,9 +54,18 @@ func rtkEnsureInstalled(opts core.RunOpts) (bool, error) {
 		return true, nil
 	}
 	opts.Reportf("checking", 0.1)
-	if p := util.ResolveRtkBin(); p != "" && !opts.Upgrade {
-		opts.Reportf("already installed", 1)
-		return true, nil
+	if p := util.ResolveRtkBin(); p != "" {
+		if !opts.Upgrade {
+			opts.Reportf("already installed", 1)
+			return true, nil
+		}
+		installedVer := util.RtkInstalledVersion()
+		latestVer := util.GithubLatestRelease("rtk-ai/rtk")
+		if installedVer != nil && latestVer != nil && *installedVer == *latestVer {
+			opts.Reportf("ready", 1)
+			util.L.Sub(util.C.Dim("rtk v" + *installedVer + " up to date"))
+			return true, nil
+		}
 	}
 	if opts.DryRun {
 		if opts.Upgrade {

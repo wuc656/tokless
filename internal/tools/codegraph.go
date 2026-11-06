@@ -49,44 +49,8 @@ func codegraphEnsureInstalled(opts core.RunOpts) (bool, error) {
 }
 
 var (
-	realInstallOnce  sync.Once
-	realInstallRes   bool
 	codegraphIndexMu sync.Mutex
 )
-
-// codegraphRealInstall runs `codegraph install --target <agent>` per call.
-func codegraphRealInstall(opts core.RunOpts, agent string) bool {
-	if opts.DryRun {
-		util.L.Sub("[dry-run] would run: codegraph install --yes")
-		return true
-	}
-	bin := util.ResolveCodegraphBin()
-	if bin == "" {
-		return false
-	}
-	helpCtx, helpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	help := util.Run(bin, []string{"install", "--help"}, util.RunOptions{Capture: true, Ctx: helpCtx})
-	helpCancel()
-	hasYes := strings.Contains(help.Stdout, "--yes") || strings.Contains(help.Stderr, "--yes")
-	hasTarget := strings.Contains(help.Stdout, "--target") || strings.Contains(help.Stderr, "--target")
-	args := []string{"install"}
-	if hasYes {
-		args = append(args, "--yes")
-	}
-	if hasTarget {
-		target := agent
-		if target == "antigravity" {
-			target = "gemini"
-		}
-		if target == "" {
-			target = "all"
-		}
-		args = append(args, "--target", target)
-	}
-	instCtx, instCancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer instCancel()
-	return util.Run(bin, args, util.RunOptions{Capture: true, Ctx: instCtx}).Code == 0
-}
 
 // codegraphConfigureMcp writes the MCP entry tokless-side.
 func codegraphConfigureMcp(agent string) bool {

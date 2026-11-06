@@ -69,15 +69,16 @@ func saveCache(m map[string]VersionInfo) {
 	_ = os.WriteFile(p, b, 0o644)
 }
 
+var defaultHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func fetchJSON(u string, out any) bool {
-	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return false
 	}
 	req.Header.Set("User-Agent", "tokless")
 	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return false
 	}
@@ -89,14 +90,13 @@ func fetchJSON(u string, out any) bool {
 }
 
 func fetchRegistryJSON(u string, out any) bool {
-	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	if err != nil {
 		return false
 	}
 	req.Header.Set("User-Agent", "tokless")
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*")
-	resp, err := client.Do(req)
+	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return false
 	}
@@ -203,7 +203,8 @@ var runNpmLs = func(npmBin, pkg string) ExecResult {
 	return Run(npmBin, []string{"ls", "-g", "--depth=0", "--json", pkg}, RunOptions{Capture: true})
 }
 
-func npmInstalledVersion(pkg string) *string {
+// NpmInstalledVersion reads the installed version of a globally installed npm/bun package.
+func NpmInstalledVersion(pkg string) *string {
 	prefix := npmPrefix()
 	userPrefix := userLocalNpmPrefix()
 	if dir := npmPkgDirFromPrefixes(pkg, prefix, userPrefix); dir != "" {
@@ -235,7 +236,9 @@ func npmInstalledVersion(pkg string) *string {
 	return bunInstalledVersion(pkg)
 }
 
-func NpmInstalledVersionExported(pkg string) *string { return npmInstalledVersion(pkg) }
+func npmInstalledVersion(pkg string) *string { return NpmInstalledVersion(pkg) }
+
+func NpmInstalledVersionExported(pkg string) *string { return NpmInstalledVersion(pkg) }
 func RtkInstalledVersion() *string                   { return rtkInstalledVersion() }
 func GithubLatestRelease(repo string) *string        { return githubLatestRelease(repo) }
 func NpmLatest(pkg string) *string                   { return npmLatest(pkg) }

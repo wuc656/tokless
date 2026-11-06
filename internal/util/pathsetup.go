@@ -65,6 +65,9 @@ func EnsureProcessPath() []string {
 }
 
 func EnsurePersistentPath() []string {
+	if IsRunningInTest() {
+		return nil
+	}
 	if IsWin {
 		return ensurePersistentPathWindows()
 	}
@@ -72,6 +75,9 @@ func EnsurePersistentPath() []string {
 }
 
 func ensurePersistentPathWindows() []string {
+	if IsRunningInTest() {
+		return nil
+	}
 	var missing []string
 	for _, dir := range ExpectedBinDirs() {
 		if Exists(dir) {
@@ -83,7 +89,7 @@ func ensurePersistentPathWindows() []string {
 
 // persistWindowsPathDirs appends dirs to the user PATH via the raw registry.
 func persistWindowsPathDirs(dirs []string) []string {
-	if len(dirs) == 0 {
+	if IsRunningInTest() || len(dirs) == 0 {
 		return nil
 	}
 	ps := `$ErrorActionPreference='Stop'
@@ -122,7 +128,7 @@ func psQuoteList(dirs []string) string {
 
 // SelfHealPath patches the live PATH without editing shell startup files.
 func SelfHealPath() {
-	if os.Getenv("TOKLESS_TEST") == "1" {
+	if IsRunningInTest() || os.Getenv("TOKLESS_TEST") == "1" {
 		return
 	}
 	added := EnsureProcessPath()

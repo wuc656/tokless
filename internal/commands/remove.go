@@ -319,10 +319,39 @@ func resolveToklessInstallDir() string {
 	return ""
 }
 
+// isToklessInstallationDir checks whether dir safely qualifies as a tokless installation directory.
+func isToklessInstallationDir(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	base := strings.ToLower(filepath.Base(dir))
+	if base != "tokless" {
+		return false
+	}
+	// Verify directory exists and doesn't contain unrelated critical files
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := strings.ToLower(e.Name())
+		// Expected tokless files: tokless, tokless.exe, toklessw, toklessw.exe, install.json, versions.json, update logs/temps
+		if strings.HasPrefix(name, "tokless") || name == "install.json" || name == "versions.json" {
+			continue
+		}
+		// If unknown directory or foreign file found, reject directory deletion as safety measure
+		return false
+	}
+	return true
+}
+
 // selfDeleteDir removes the installation directory or schedules self-deletion on Windows.
 func selfDeleteDir(installDir string) error {
 	if util.IsRunningInTest() || installDir == "" || !util.Exists(installDir) {
 		return nil
+	}
+	if !isToklessInstallationDir(installDir) {
+		return fmt.Errorf("refusing to self-delete unverified directory: %s", installDir)
 	}
 	exe, err := os.Executable()
 	if err != nil {

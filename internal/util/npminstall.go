@@ -54,16 +54,17 @@ type registryDoc struct {
 	} `json:"versions"`
 }
 
+var npmRegistryHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 // resolveFromRegistry resolves the version and tarball URL for a package spec.
 func resolveFromRegistry(pkg, spec string) (string, string, bool) {
-	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, npmRegistryBase()+url.QueryEscape(pkg), nil)
 	if err != nil {
 		return "", "", false
 	}
 	req.Header.Set("User-Agent", "tokless")
 	req.Header.Set("Accept", "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*")
-	resp, err := client.Do(req)
+	resp, err := npmRegistryHTTPClient.Do(req)
 	if err != nil {
 		return "", "", false
 	}

@@ -38,12 +38,16 @@ func toolConfigLocation(agentID, toolID string) (path, key string) {
 		key = "mcp.servers." + toolID
 	case "codex":
 		path = util.CodexPathsResolved().Config
-		key = "mcp_servers." + toolID
+		if toolID == "context-mode" {
+			key = "mcp_servers.context_mode"
+		} else {
+			key = "mcp_servers." + toolID
+		}
 	case "cursor":
 		path = util.CursorGlobalMcpPath()
 		key = "mcpServers." + toolID
 	case "antigravity":
-		path = util.AntigravityPathsResolved().McpConfig
+		path = util.AntigravityPathsResolved().McpConfigCLI
 		key = "mcpServers." + toolID
 	case "copilot":
 		path = util.CopilotPathsResolved().McpConfig
@@ -87,6 +91,26 @@ func RunDoctor(offline, fix bool) int {
 	cmdHeader("doctor", "health check")
 
 	toolManifests := core.ListTools()
+
+	if fix {
+		for _, agent := range core.ListAgents() {
+			if !agent.Detect().Installed {
+				continue
+			}
+			missing := doctorMissingTools(toolManifests, agent.ID)
+			for _, toolLabel := range missing {
+				for _, tm := range toolManifests {
+					if tm.Label == toolLabel {
+						if wireFn, ok := tm.WireFor[agent.ID]; ok {
+							util.L.Sub("fixing " + agent.Label + ": wiring " + tm.Label + "…")
+							_, _ = wireFn(core.RunOpts{DryRun: false, Upgrade: false})
+						}
+					}
+				}
+			}
+		}
+	}
+
 	var reports []agentReport
 	for _, agent := range core.ListAgents() {
 		if !agent.Detect().Installed {
@@ -467,7 +491,7 @@ func doctorStatusLines(outdated, broken, installedAgents int) []string {
 		lines = append(lines, statusKV(
 			util.C.Yellow(util.Sym.Warn),
 			"agents",
-			util.C.Yellow(msg)+" — run "+paintCmd("tokless"),
+			util.C.Yellow(msg)+" — run "+paintCmd("tokless doctor --fix"),
 		))
 	} else if installedAgents > 0 {
 		lines = append(lines, statusKV(
@@ -515,6 +539,40 @@ func paintProxyLabel(label, url string) string {
 		return util.C.Cyan(label[:i]) + label[i:]
 	}
 	return util.C.Cyan(label)
+}
+
+func diagnoseToolFailure(agentID, toolID string) string {
+	cfgPath, key := toolConfigLocation(agentID, toolID)
+	if cfgPath != "" && !util.Exists(cfgPath) {
+		return "file missing: " + tildePath(cfgPath)
+	}
+	switch agentID {
+	case "codex":
+		if toolID == "context-mode" {
+			cx := util.CodexPathsResolved()
+			if raw, ok := util.ReadFileSafe(cx.Instructions); !ok || !strings.Contains(raw, util.SectionsByOwner["context-mode"]) {
+				return "instructions missing section in " + tildePath(cx.Instructions)
+			}
+		}
+	case "antigravity":
+		if toolID == "codegraph" && !agents.HasAntigravityCodegraphIndexHook() {
+			return "index hook missing"
+		}
+		if toolID == "context-mode" && agents.HasAntigravityContextModeHook() {
+			return "legacy context hook present"
+		}
+	case "copilot":
+		if toolID == "codegraph" && !agents.HasCopilotCodegraphIndexHook() {
+			return "index hook missing in ~/.copilot/hooks"
+		}
+		if toolID == "context-mode" && !agents.HasCopilotContextModeHook() {
+			return "context hook missing in ~/.copilot/hooks"
+		}
+	}
+	if cfgPath != "" {
+		return "MCP entry missing or command mismatch in " + key
+	}
+	return "unwired"
 }
 
 func doctorAgentRows(r agentReport) []string {
@@ -603,10 +661,22 @@ func doctorAgentRows(r agentReport) []string {
 		}
 
 
+		var detail string
+		if passed == nil || !*passed {
+			detail = diagnoseToolFailure(r.id, tool.ID)
+		}
 		if cfgPath, key := toolConfigLocation(r.id, tool.ID); cfgPath != "" && key != "" {
-			rows = append(rows, mark+" "+tool.Label+" → "+util.C.Gray(tildePath(cfgPath))+util.C.Dim(" ("+key+")"))
+			rowStr := mark + " " + tool.Label + " → " + util.C.Gray(tildePath(cfgPath)) + util.C.Dim(" ("+key+")")
+			if detail != "" {
+				rowStr += " " + util.C.Yellow("["+detail+"]")
+			}
+			rows = append(rows, rowStr)
 		} else {
-			rows = append(rows, mark+" "+tool.Label+" → "+util.C.Dim("configuration location unknown"))
+			rowStr := mark + " " + tool.Label + " → " + util.C.Dim("configuration location unknown")
+			if detail != "" {
+				rowStr += " " + util.C.Yellow("["+detail+"]")
+			}
+			rows = append(rows, rowStr)
 		}
 	}
 

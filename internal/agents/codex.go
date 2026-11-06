@@ -1040,7 +1040,7 @@ func removeCodexProxyLocked() bool {
 	}
 	stash, stashOK := loadCodexStash()
 	if !stashOK {
-		return false
+		stash = codexStash{}
 	}
 	if stash.ProviderID != "" {
 		next = util.SetTomlTopKey(next, "model_provider", stash.ProviderID)

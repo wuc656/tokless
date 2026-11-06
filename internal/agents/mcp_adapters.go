@@ -80,7 +80,8 @@ func ampMcpHas(toolID string, command []string) bool {
 	got, _ := m.Get("command")
 	args, _ := m.Get("args")
 	disabled, _ := m.Get("disabled")
-	return typ == "stdio" && got == command[0] && disabled != true && argsEq(args, command[1:])
+	gotStr, _ := got.(string)
+	return typ == "stdio" && util.CommandMatches(gotStr, command[0]) && disabled != true && argsEq(args, command[1:])
 }
 
 func removeAmpMcp(toolID string) bool {
@@ -190,7 +191,11 @@ func jsonMcpAdapter(id string, pathFn func() string, nested string) agentMcpAdap
 			cmd, _ := m.Get("command")
 			args, _ := m.Get("args")
 			typ, _ := m.Get("type")
-			return cmd == req.Command[0] && argsEq(args, req.Command[1:]) && (typ == "stdio" || typ == nil)
+			cmdStr, _ := cmd.(string)
+			if util.CommandMatches(cmdStr, req.Command[0]) && argsEq(args, req.Command[1:]) && (typ == "stdio" || typ == nil) {
+				return true
+			}
+			return util.McpEntryMatchesTool(req.ToolID, req.Command[0], req.Command[1:], m)
 		},
 	}
 }
@@ -381,14 +386,18 @@ func claudeMcpHas(toolID string, command []string) bool {
 	}
 	cmd, _ := em.Get("command")
 	args, _ := em.Get("args")
-	if cmd == command[0] && argsEq(args, command[1:]) {
+	cmdStr, _ := cmd.(string)
+	if util.CommandMatches(cmdStr, command[0]) && argsEq(args, command[1:]) {
+		return true
+	}
+	if util.McpEntryMatchesTool(toolID, command[0], command[1:], em) {
 		return true
 	}
 	// Accept unwrapped codegraph (pre-Phase-2 shape) in ~/.claude.json.
 	// Live config may use bare "codegraph", the resolved spawn path, or its base.
 	if toolID == "codegraph" {
 		unwrapped := util.PickMcpSpawn("codegraph", "serve", "--mcp")
-		if (cmd == "codegraph" || cmd == unwrapped.Command || cmd == filepath.Base(unwrapped.Command)) && argsEq(args, unwrapped.Args) {
+		if (util.CommandMatches(cmdStr, "codegraph") || util.CommandMatches(cmdStr, unwrapped.Command) || util.CommandMatches(cmdStr, filepath.Base(unwrapped.Command))) && argsEq(args, unwrapped.Args) {
 			return true
 		}
 	}
@@ -433,7 +442,13 @@ func codexMcpHas(toolID string, command []string) bool {
 		return false
 	}
 	cmd, args := parseCodexMcpBlock(text)
-	return cmd == command[0] && argsEq(toAnySlice(args), command[1:])
+	if util.CommandMatches(cmd, command[0]) && argsEq(toAnySlice(args), command[1:]) {
+		return true
+	}
+	m := util.NewOrderedMap()
+	m.Set("command", cmd)
+	m.Set("args", toAnySlice(args))
+	return util.McpEntryMatchesTool(toolID, command[0], command[1:], m)
 }
 
 func removeCodexMcpBlocks(raw, toolID string) string {

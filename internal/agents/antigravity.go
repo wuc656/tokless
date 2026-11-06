@@ -933,16 +933,20 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 	return changed, file
 }
 
-// AntigravityMcpBounded reports whether every supported MCP config holds the tokless-bounded entry for toolID.
+// AntigravityMcpBounded reports whether supported MCP configs hold the tokless-bounded entry for toolID.
 func AntigravityMcpBounded(toolID string) bool {
 	files := antigravityMcpConfigFiles()
 	if len(files) == 0 {
 		return false
 	}
+	checkedAny := false
 	for _, f := range files {
 		raw, ok := util.ReadFileSafe(f)
 		if !ok {
-			return false
+			if f == files[0] {
+				return false
+			}
+			continue
 		}
 		cfg := util.TryParseJsonc(raw)
 		if cfg == nil {
@@ -957,8 +961,9 @@ func AntigravityMcpBounded(toolID string) bool {
 		if !found || !antigravityMcpManaged(toolID, existing) {
 			return false
 		}
+		checkedAny = true
 	}
-	return true
+	return checkedAny
 }
 
 
@@ -1217,45 +1222,18 @@ func antigravityMcpManaged(toolID string, existing any) bool {
 	command, _ := em.Get("command")
 	args, _ := em.Get("args")
 	trust, _ := em.Get("trust")
+	cmdStr, _ := command.(string)
 	spawn := util.McpSpawnFor(toolID)
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("antigravity", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	}
-	return command == spawn.Command && argsEq(args, spawn.Args) && trust == true
+	if util.CommandMatches(cmdStr, spawn.Command) && argsEq(args, spawn.Args) && trust == true {
+		return true
+	}
+	return util.McpEntryMatchesTool(toolID, spawn.Command, spawn.Args, existing)
 }
 
 func antigravityAdoptableMcpEntry(existing any, toolID string) bool {
-	em, ok := existing.(*util.OrderedMap)
-	if !ok {
-		return false
-	}
-	cmdRaw, _ := em.Get("command")
-	cmdStr, _ := cmdRaw.(string)
-	cmdLower := strings.ToLower(cmdStr)
-	cmdBase := strings.ToLower(filepath.Base(cmdStr))
-	if strings.Contains(cmdLower, "tokless") {
-		return true
-	}
-	argsRaw, _ := em.Get("args")
-	argsList, _ := argsRaw.([]any)
-	hasArg := func(sub string) bool {
-		for _, a := range argsList {
-			if s, ok := a.(string); ok && strings.Contains(strings.ToLower(s), sub) {
-				return true
-			}
-		}
-		return false
-	}
-	switch toolID {
-	case "codegraph":
-		if strings.Contains(cmdBase, "codegraph") || hasArg("codegraph") {
-			return true
-		}
-	case "context-mode":
-		if strings.Contains(cmdBase, "context-mode") || hasArg("context-mode") {
-			return true
-		}
-	}
-	return false
+	return util.IsToklessOrToolMcpEntry(toolID, existing)
 }
 

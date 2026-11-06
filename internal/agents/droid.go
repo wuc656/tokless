@@ -133,10 +133,11 @@ func ConfigureDroidMcp(toolID string) (changed bool, file string) {
 		ec, _ := em.Get("command")
 		ea, _ := em.Get("args")
 		et, _ := em.Get("enabledTools")
-		if ec == spawn.Command && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID]) {
+		ecStr, _ := ec.(string)
+		if util.CommandMatches(ecStr, spawn.Command) && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID]) {
 			return false, f
 		}
-		if ec != spawn.Command {
+		if !util.IsToklessOrToolMcpEntry(toolID, existing) && !util.CommandMatches(ecStr, spawn.Command) {
 			return false, f
 		}
 	}
@@ -205,12 +206,13 @@ func RemoveDroidMcp(toolID string) bool {
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("droid", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	}
-	if em, ok := existing.(*util.OrderedMap); !ok || func() bool {
+	if em, ok := existing.(*util.OrderedMap); !ok || (!util.IsToklessOrToolMcpEntry(toolID, existing) && func() bool {
 		command, _ := em.Get("command")
 		args, _ := em.Get("args")
 		tools, _ := em.Get("enabledTools")
-		return command == spawn.Command && argsEq(args, spawn.Args) && enabledToolsEq(tools, droidEnabledTools[toolID])
-	}() == false {
+		cmdStr, _ := command.(string)
+		return util.CommandMatches(cmdStr, spawn.Command) && argsEq(args, spawn.Args) && enabledToolsEq(tools, droidEnabledTools[toolID])
+	}() == false) {
 		return false
 	}
 	sm.Delete(toolID)
@@ -244,7 +246,8 @@ func DroidMcpBounded(toolID string) bool {
 	ec, _ := em.Get("command")
 	ea, _ := em.Get("args")
 	et, _ := em.Get("enabledTools")
-	return ec == spawn.Command && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID])
+	ecStr, _ := ec.(string)
+	return (util.CommandMatches(ecStr, spawn.Command) && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID])) || util.McpEntryMatchesTool(toolID, spawn.Command, spawn.Args, em)
 }
 
 
@@ -604,17 +607,7 @@ func HasDroidCtxModePreToolUse() bool {
 // --- helpers ---
 
 func argsEq(a any, b []string) bool {
-	arr, ok := a.([]any)
-	if !ok || len(arr) != len(b) {
-		return false
-	}
-	for i, x := range arr {
-		s, ok := x.(string)
-		if !ok || s != b[i] {
-			return false
-		}
-	}
-	return true
+	return util.ArgsEqual(a, b)
 }
 
 // --- Droid headroom HTTP proxy ---

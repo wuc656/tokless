@@ -423,7 +423,11 @@ func piMcpEntryMatches(em *util.OrderedMap, spawn util.McpSpawn) bool {
 	ex, _ := em.Get("exposure")
 	_, lc := em.Get("lifecycle")
 	_, dt := em.Get("directTools")
-	return ec == spawn.Command && argsEq(ea, spawn.Args) && ex == "direct" && !lc && !dt
+	ecStr, _ := ec.(string)
+	if util.CommandMatches(ecStr, spawn.Command) && argsEq(ea, spawn.Args) && ex == "direct" && !lc && !dt {
+		return true
+	}
+	return util.McpEntryMatchesTool(filepath.Base(spawn.Command), spawn.Command, spawn.Args, em)
 }
 
 // piStripAdapterFields removes pi-mcp-adapter-only keys; other keys stay untouched.
@@ -491,7 +495,7 @@ func ConfigurePiMcp(toolID string) (changed bool, file string) {
 	if existing, ok := servers.Get(toolID); ok {
 		if em, isMap := existing.(*util.OrderedMap); isMap {
 			if !piMcpEntryMatches(em, spawn) {
-				if ec, _ := em.Get("command"); ec == spawn.Command {
+				if ec, _ := em.Get("command"); ec == spawn.Command || util.IsToklessOrToolMcpEntry(toolID, existing) {
 					servers.Set(toolID, entry)
 				}
 			}
@@ -535,7 +539,9 @@ func RemovePiMcp(toolID string) bool {
 	if !ok {
 		return false
 	}
-	if ec, _ := em.Get("command"); ec != spawn.Command {
+	ec, _ := em.Get("command")
+	ecStr, _ := ec.(string)
+	if !util.CommandMatches(ecStr, spawn.Command) && !util.IsToklessOrToolMcpEntry(toolID, existing) {
 		return false
 	}
 	sm.Delete(toolID)

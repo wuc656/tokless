@@ -54,7 +54,9 @@ func ConfigureClaudeMcp(toolID string) (changed bool, file string) {
 			AllowClaudeMcpToolProjectLocal(toolID)
 			return false, p.GlobalJSON
 		}
-		return false, p.GlobalJSON
+		if !util.IsToklessOrToolMcpEntry(toolID, existing) {
+			return false, p.GlobalJSON
+		}
 	}
 	servers.Set(toolID, desired)
 	if err := util.WriteFile(p.GlobalJSON, util.StringifyJSON(cfg)); err != nil {
@@ -452,7 +454,7 @@ func RemoveClaudeMcp(toolID string) bool {
 						desired.Set("type", "stdio")
 						desired.Set("command", spawn.Command)
 						desired.Set("args", toAnySlice(spawn.Args))
-						if !claudeMcpEqual(existing, desired) {
+						if !claudeMcpEqual(existing, desired) && !util.IsToklessOrToolMcpEntry(toolID, existing) {
 							return removed
 						}
 						sm.Delete(toolID)
@@ -655,7 +657,7 @@ func ClaudeOAuthWired() bool {
 	return false
 }
 
-// claudeMcpEqual compares command/args/env by canonical JSON.
+// claudeMcpEqual compares command/args/env by canonical JSON with path normalization.
 func claudeMcpEqual(existing any, desired *util.OrderedMap) bool {
 	em, ok := existing.(*util.OrderedMap)
 	if !ok {
@@ -663,12 +665,24 @@ func claudeMcpEqual(existing any, desired *util.OrderedMap) bool {
 	}
 	cmdA, _ := em.Get("command")
 	cmdB, _ := desired.Get("command")
-	if jsonStr(cmdA) != jsonStr(cmdB) {
+	cmdAStr, _ := cmdA.(string)
+	cmdBStr, _ := cmdB.(string)
+	if !util.CommandMatches(cmdAStr, cmdBStr) {
 		return false
 	}
 	argsA, _ := em.Get("args")
 	argsB, _ := desired.Get("args")
-	if jsonStr(orEmptyArr(argsA)) != jsonStr(orEmptyArr(argsB)) {
+	var argsBSlice []string
+	if sList, ok := argsB.([]any); ok {
+		for _, x := range sList {
+			if s, ok := x.(string); ok {
+				argsBSlice = append(argsBSlice, s)
+			}
+		}
+	} else if sList, ok := argsB.([]string); ok {
+		argsBSlice = sList
+	}
+	if !util.ArgsEqual(argsA, argsBSlice) {
 		return false
 	}
 	envA, _ := em.Get("env")

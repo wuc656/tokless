@@ -377,35 +377,63 @@ if ($key) {
 }
 
 // deepSweepAgentConfigs checks all agent configuration files and prunes any remaining
-// entries referencing "tokless" or "run-mcp".
+// entries referencing "tokless" or "run-mcp" or Tokless-managed tools.
 func deepSweepAgentConfigs() {
-	// 1. Claude
-	claudeFile := util.ClaudeCodePaths().GlobalJSON
-	if raw, ok := util.ReadFileSafe(claudeFile); ok {
-		if cfg := util.TryParseJsonc(raw); cfg != nil {
-			changed := false
-			if servers, ok := cfg.Get("mcpServers"); ok {
-				if sm, ok := servers.(*util.OrderedMap); ok && sm != nil {
-					for _, k := range sm.Keys() {
-						v, _ := sm.Get(k)
-						if isToklessManagedEntry(v) {
-							sm.Delete(k)
-							changed = true
+	cleanJsonMcp := func(filePath string, childKey string) {
+		if raw, ok := util.ReadFileSafe(filePath); ok {
+			if cfg := util.TryParseJsonc(raw); cfg != nil {
+				changed := false
+				targetMap := cfg
+				if childKey != "" {
+					if strings.Contains(childKey, ".") {
+						parts := strings.Split(childKey, ".")
+						curr := cfg
+						for _, p := range parts {
+							if next, ok := curr.Get(p); ok {
+								if om, ok := next.(*util.OrderedMap); ok && om != nil {
+									curr = om
+								} else {
+									return
+								}
+							} else {
+								return
+							}
+						}
+						targetMap = curr
+					} else {
+						if cm, ok := cfg.Get(childKey); ok {
+							if om, ok := cm.(*util.OrderedMap); ok && om != nil {
+								targetMap = om
+							} else {
+								return
+							}
+						} else {
+							return
 						}
 					}
 				}
-			}
-			if changed {
-				_ = util.WriteFile(claudeFile, util.StringifyJSON(cfg))
+				for _, k := range targetMap.Keys() {
+					v, _ := targetMap.Get(k)
+					if k == "codegraph" || k == "context-mode" || k == "context_mode" || k == "projectmem" || k == "caveman" || isToklessManagedEntry(v) {
+						targetMap.Delete(k)
+						changed = true
+					}
+				}
+				if changed {
+					_ = util.WriteFile(filePath, util.StringifyJSON(cfg))
+				}
 			}
 		}
 	}
+
+	// 1. Claude
+	cleanJsonMcp(util.ClaudeCodePaths().GlobalJSON, "mcpServers")
 
 	// 2. Codex
 	codexFile := util.CodexPathsResolved().Config
 	if raw, ok := util.ReadFileSafe(codexFile); ok {
 		next := raw
-		for _, tool := range []string{"codegraph", "context-mode", "context_mode", "projectmem"} {
+		for _, tool := range []string{"codegraph", "context-mode", "context_mode", "projectmem", "headroom"} {
 			next = util.RemoveBlock(next, "mcp_servers."+tool)
 		}
 		if next != raw {
@@ -467,42 +495,27 @@ func deepSweepAgentConfigs() {
 		}
 	}
 
-	// 3. OpenCode & OpenCode2
-	for _, f := range []string{util.OpenCodePathsResolved().Config, util.OpenCodePathsV2().Config} {
-		if raw, ok := util.ReadFileSafe(f); ok {
-			if cfg := util.TryParseJsonc(raw); cfg != nil {
-				changed := false
-				if mcp, ok := cfg.Get("mcp"); ok {
-					if mm, ok := mcp.(*util.OrderedMap); ok && mm != nil {
-						for _, k := range mm.Keys() {
-							if k == "servers" {
-								if srv, ok := mm.Get("servers"); ok {
-									if sm, ok := srv.(*util.OrderedMap); ok && sm != nil {
-										for _, sk := range sm.Keys() {
-											sv, _ := sm.Get(sk)
-											if isToklessManagedEntry(sv) {
-												sm.Delete(sk)
-												changed = true
-											}
-										}
-									}
-								}
-								continue
-							}
-							v, _ := mm.Get(k)
-							if isToklessManagedEntry(v) {
-								mm.Delete(k)
-								changed = true
-							}
-						}
-					}
-				}
-				if changed {
-					_ = util.WriteFile(f, util.StringifyJSON(cfg))
-				}
-			}
-		}
-	}
+	// 3. Antigravity / Gemini
+	cleanJsonMcp(util.AntigravityPathsResolved().McpConfigCLI, "mcpServers")
+	cleanJsonMcp(util.AntigravityPathsResolved().McpConfig, "mcpServers")
+	cleanJsonMcp(filepath.Join(util.Home(), ".gemini", "antigravity-cli", "mcp_config.json"), "mcpServers")
+
+	// 4. GitHub Copilot
+	cleanJsonMcp(util.CopilotPathsResolved().McpConfig, "mcpServers")
+
+	// 5. OpenCode & OpenCode2
+	cleanJsonMcp(util.OpenCodePathsResolved().Config, "mcp")
+	cleanJsonMcp(util.OpenCodePathsV2().Config, "mcp.servers")
+
+	// 6. Droid, Pi, OMP, Cline, Kimi, Kilo, Amp, Zcode
+	cleanJsonMcp(filepath.Join(util.Home(), ".factory", "mcp.json"), "mcpServers")
+	cleanJsonMcp(filepath.Join(agents.PiAgentDirResolved(), "mcp.json"), "mcpServers")
+	cleanJsonMcp(filepath.Join(agents.OmpAgentDirResolved(), "mcp.json"), "mcpServers")
+	cleanJsonMcp(util.ClinePathsResolved().McpConfig, "mcpServers")
+	cleanJsonMcp(util.KimiPathsResolved().McpConfig, "mcpServers")
+	cleanJsonMcp(util.KiloPathsResolved().Config, "mcp")
+	cleanJsonMcp(util.AmpPathsResolved().Config, "amp.mcpServers")
+	cleanJsonMcp(util.ZcodePathsResolved().McpConfig, "mcp.servers")
 }
 
 func isOnlyToklessHeaderContent(s string) bool {
@@ -518,16 +531,19 @@ func isOnlyToklessHeaderContent(s string) bool {
 }
 
 func isToklessManagedEntry(v any) bool {
+	if util.IsToklessOrToolMcpEntry("codegraph", v) || util.IsToklessOrToolMcpEntry("context-mode", v) || util.IsToklessOrToolMcpEntry("projectmem", v) || util.IsToklessOrToolMcpEntry("headroom", v) {
+		return true
+	}
 	if m, ok := v.(*util.OrderedMap); ok && m != nil {
 		if cmd, ok := m.Get("command"); ok {
-			if s, ok := cmd.(string); ok && strings.Contains(strings.ToLower(s), "tokless") {
+			if s, ok := cmd.(string); ok && (strings.Contains(strings.ToLower(s), "tokless") || strings.Contains(strings.ToLower(s), "codegraph") || strings.Contains(strings.ToLower(s), "context-mode")) {
 				return true
 			}
 		}
 		if args, ok := m.Get("args"); ok {
 			if arr, ok := args.([]any); ok {
 				for _, a := range arr {
-					if s, ok := a.(string); ok && (s == "run-mcp" || strings.Contains(s, "tokless")) {
+					if s, ok := a.(string); ok && (s == "run-mcp" || strings.Contains(s, "tokless") || strings.Contains(s, "codegraph") || strings.Contains(s, "context-mode")) {
 						return true
 					}
 				}

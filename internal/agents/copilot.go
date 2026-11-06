@@ -807,22 +807,34 @@ func copilotMcpDesired(toolID string, ide bool) *util.OrderedMap {
 }
 
 func copilotManagedMcpEntry(v any, toolID string, ide bool) bool {
-	return copilotMcpEqual(v, copilotMcpDesired(toolID, ide))
+	return copilotMcpEqual(v, copilotMcpDesired(toolID, ide)) || util.IsToklessOrToolMcpEntry(toolID, v)
 }
 
 func copilotMcpEqual(existing any, desired *util.OrderedMap) bool {
 	em, ok := existing.(*util.OrderedMap)
-	if !ok || em.Len() != desired.Len() {
+	if !ok {
 		return false
 	}
-	for _, key := range desired.Keys() {
-		want, _ := desired.Get(key)
-		have, ok := em.Get(key)
-		if !ok || jsonString(have) != jsonString(want) {
-			return false
+	desCmd, _ := desired.Get("command")
+	desArgs, _ := desired.Get("args")
+	haveCmd, _ := em.Get("command")
+	haveArgs, _ := em.Get("args")
+	haveCmdStr, _ := haveCmd.(string)
+	desCmdStr, _ := desCmd.(string)
+	var desArgsSlice []string
+	if sList, ok := desArgs.([]any); ok {
+		for _, x := range sList {
+			if s, ok := x.(string); ok {
+				desArgsSlice = append(desArgsSlice, s)
+			}
 		}
+	} else if sList, ok := desArgs.([]string); ok {
+		desArgsSlice = sList
 	}
-	return true
+	if util.CommandMatches(haveCmdStr, desCmdStr) && util.ArgsEqual(haveArgs, desArgsSlice) {
+		return true
+	}
+	return util.McpEntryMatchesTool(desCmdStr, desCmdStr, desArgsSlice, em)
 }
 
 func jsonString(v any) string {
@@ -901,7 +913,8 @@ func CopilotMcpBounded(toolID string, ide bool) bool {
 		return false
 	}
 	existing, found := sm.Get(toolID)
-	return found && copilotMcpEqual(existing, copilotMcpDesired(toolID, ide))
+	desired := copilotMcpDesired(toolID, ide)
+	return found && (copilotMcpEqual(existing, desired) || util.IsToklessOrToolMcpEntry(toolID, existing))
 }
 
 

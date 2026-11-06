@@ -164,6 +164,12 @@ func ompMcpEqual(existing any, desired *util.OrderedMap) bool {
 			if !valid || !wantValid || !argsEq(toAnySlice(values), wantValues) {
 				return false
 			}
+		} else if key == "command" {
+			gotStr, _ := got.(string)
+			wantStr, _ := want.(string)
+			if !util.CommandMatches(gotStr, wantStr) {
+				return false
+			}
 		} else if got != want {
 			return false
 		}

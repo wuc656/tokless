@@ -179,7 +179,11 @@ func TestRunRemoveComplete(t *testing.T) {
 }
 
 func TestRunRemoveWhenAlreadyUninstalled(t *testing.T) {
+	t.Setenv("TOKLESS_TEST", "1")
 	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
 	util.SetHomeOverride(home)
 	t.Cleanup(func() { util.SetHomeOverride("") })
 

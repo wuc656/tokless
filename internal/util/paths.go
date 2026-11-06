@@ -190,6 +190,20 @@ func IsGoTestExecutable(exe string) bool {
 	return strings.HasSuffix(base, ".test") || strings.HasSuffix(base, ".test.exe") || strings.Contains(exe, string(filepath.Separator)+"go-build")
 }
 
+// IsRunningInTest reports whether execution is running inside a test process.
+func IsRunningInTest() bool {
+	if os.Getenv("TOKLESS_TEST") == "1" {
+		return true
+	}
+	if len(os.Args) > 0 && IsGoTestExecutable(os.Args[0]) {
+		return true
+	}
+	if exe, err := os.Executable(); err == nil && IsGoTestExecutable(exe) {
+		return true
+	}
+	return false
+}
+
 // ToklessAbsStrict returns the absolute tokless path, or "" when only a bare-name fallback exists.
 func ToklessAbsStrict() string {
 	exe, err := os.Executable()

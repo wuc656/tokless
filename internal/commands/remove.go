@@ -29,7 +29,7 @@ type removeOps struct {
 }
 
 func defaultRemoveOps() removeOps {
-	isTest := os.Getenv("TOKLESS_TEST") == "1"
+	isTest := util.IsRunningInTest()
 	return removeOps{
 		stopProxy: func() error {
 			if isTest {
@@ -61,8 +61,18 @@ func defaultRemoveOps() removeOps {
 			}
 			return headroompkg.DisableProxyAutostart()
 		},
-		removeAll:  os.RemoveAll,
-		removeFile: os.Remove,
+		removeAll: func(p string) error {
+			if isTest {
+				return nil
+			}
+			return os.RemoveAll(p)
+		},
+		removeFile: func(p string) error {
+			if isTest {
+				return nil
+			}
+			return os.Remove(p)
+		},
 		cleanUserPath: func(dir string) error {
 			if isTest || !util.IsWin {
 				return nil
@@ -86,7 +96,7 @@ func defaultRemoveOps() removeOps {
 		},
 		uninstallRtk: func(p string) error {
 			if isTest {
-				return os.Remove(p)
+				return nil
 			}
 			if util.Exists(p) {
 				_ = util.Run(p, []string{"init", "--uninstall"}, util.RunOptions{Capture: true})
@@ -275,6 +285,9 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 
 // resolveToklessInstallDir locates the directory where tokless is installed.
 func resolveToklessInstallDir() string {
+	if util.IsRunningInTest() {
+		return ""
+	}
 	if rec, exact := util.InstallInfo(); exact && rec.Path != "" {
 		return filepath.Dir(rec.Path)
 	}
@@ -308,7 +321,7 @@ func resolveToklessInstallDir() string {
 
 // selfDeleteDir removes the installation directory or schedules self-deletion on Windows.
 func selfDeleteDir(installDir string) error {
-	if installDir == "" || !util.Exists(installDir) {
+	if util.IsRunningInTest() || installDir == "" || !util.Exists(installDir) {
 		return nil
 	}
 	exe, err := os.Executable()
@@ -353,7 +366,7 @@ func selfDeleteDir(installDir string) error {
 
 // cleanWindowsUserPath removes the given directory from HKCU\Environment\Path.
 func cleanWindowsUserPath(dir string) error {
-	if !util.IsWin || dir == "" {
+	if util.IsRunningInTest() || !util.IsWin || dir == "" {
 		return nil
 	}
 	dir = strings.TrimRight(dir, `\/`)

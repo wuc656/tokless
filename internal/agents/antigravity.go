@@ -902,11 +902,13 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 		}
 		entry.Set("trust", true)
 		if existing, ok := servers.Get(toolID); ok {
-			if !jsonEqual(existing, entry) {
+			if jsonEqual(existing, entry) {
+				continue
+			}
+			if !antigravityAdoptableMcpEntry(existing, toolID) {
 				allConfigured = false
 				continue
 			}
-			continue
 		}
 		servers.Set(toolID, entry)
 		if next := util.StringifyJSON(cfg); next != raw {
@@ -1174,7 +1176,7 @@ func removeAntigravityMcpFromFiles(toolID string, files []string) {
 		}
 		if s, ok := cfg.Get("mcpServers"); ok {
 			if sm, ok := s.(*util.OrderedMap); ok {
-				if existing, has := sm.Get(toolID); has && antigravityMcpManaged(toolID, existing) {
+				if existing, has := sm.Get(toolID); has && (antigravityMcpManaged(toolID, existing) || antigravityAdoptableMcpEntry(existing, toolID)) {
 					sm.Delete(toolID)
 					_ = util.WriteFile(f, util.StringifyJSON(cfg))
 				}
@@ -1220,5 +1222,40 @@ func antigravityMcpManaged(toolID string, existing any) bool {
 		spawn = util.WrapAutoIndex("antigravity", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	}
 	return command == spawn.Command && argsEq(args, spawn.Args) && trust == true
+}
+
+func antigravityAdoptableMcpEntry(existing any, toolID string) bool {
+	em, ok := existing.(*util.OrderedMap)
+	if !ok {
+		return false
+	}
+	cmdRaw, _ := em.Get("command")
+	cmdStr, _ := cmdRaw.(string)
+	cmdLower := strings.ToLower(cmdStr)
+	cmdBase := strings.ToLower(filepath.Base(cmdStr))
+	if strings.Contains(cmdLower, "tokless") {
+		return true
+	}
+	argsRaw, _ := em.Get("args")
+	argsList, _ := argsRaw.([]any)
+	hasArg := func(sub string) bool {
+		for _, a := range argsList {
+			if s, ok := a.(string); ok && strings.Contains(strings.ToLower(s), sub) {
+				return true
+			}
+		}
+		return false
+	}
+	switch toolID {
+	case "codegraph":
+		if strings.Contains(cmdBase, "codegraph") || hasArg("codegraph") {
+			return true
+		}
+	case "context-mode":
+		if strings.Contains(cmdBase, "context-mode") || hasArg("context-mode") {
+			return true
+		}
+	}
+	return false
 }
 

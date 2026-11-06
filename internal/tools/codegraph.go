@@ -335,6 +335,18 @@ func codegraphWire(agent string) core.AgentFn {
 			WriteOwner("cline", "codegraph")
 			return codegraphVerify("cline"), nil
 		}
+		if agent == "antigravity" {
+			if opts.DryRun {
+				return true, nil
+			}
+			if !codegraphConfigureMcp(agent) {
+				return false, nil
+			}
+			writeCodegraphBlock(agent)
+			agents.InstallAntigravityCodegraphIndexHook()
+			agents.CleanupDeadIdeHooks()
+			return codegraphVerify(agent), nil
+		}
 		if isTest() {
 			if agent == "copilot" {
 				return codegraphWireCopilot(opts)

@@ -536,7 +536,11 @@ func RunInit(opts InitOptions) int {
 						}
 					}
 					if stillWired {
-						treeSub("rollback failed: " + change.tool.Label + " from " + change.agent + ": configuration was not removed")
+						targetDesc := change.agent
+						if agent := core.GetAgent(change.agent); agent != nil {
+							targetDesc = agent.Label
+						}
+						treeSub("rollback failed: " + change.tool.Label + " from " + targetDesc + ": configuration was not removed (managed entry or hook still present in config)")
 					}
 				}
 			}

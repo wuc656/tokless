@@ -78,6 +78,13 @@ func fetchJSON(u string, out any) bool {
 	}
 	req.Header.Set("User-Agent", "tokless")
 	req.Header.Set("Accept", "application/json")
+	if strings.Contains(u, "api.github.com") {
+		if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		} else if token := os.Getenv("GH_TOKEN"); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
 	resp, err := defaultHTTPClient.Do(req)
 	if err != nil {
 		return false

@@ -13,7 +13,7 @@ import (
 )
 
 func McpCommand(agentID, toolID string) []string {
-	spawn := util.McpSpawnFor(toolID)
+	spawn := util.McpSpawnForAgent(agentID, toolID)
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex(agentID, util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	}
@@ -390,7 +390,7 @@ func claudeMcpHas(toolID string, command []string) bool {
 	if util.CommandMatches(cmdStr, command[0]) && argsEq(args, command[1:]) {
 		return true
 	}
-	if util.McpEntryMatchesTool(toolID, command[0], command[1:], em) {
+	if toolID != "context-mode" && util.McpEntryMatchesTool(toolID, command[0], command[1:], em) {
 		return true
 	}
 	// Accept unwrapped codegraph (pre-Phase-2 shape) in ~/.claude.json.
@@ -445,10 +445,13 @@ func codexMcpHas(toolID string, command []string) bool {
 	if util.CommandMatches(cmd, command[0]) && argsEq(toAnySlice(args), command[1:]) {
 		return true
 	}
-	m := util.NewOrderedMap()
-	m.Set("command", cmd)
-	m.Set("args", toAnySlice(args))
-	return util.McpEntryMatchesTool(toolID, command[0], command[1:], m)
+	if toolID != "context-mode" {
+		m := util.NewOrderedMap()
+		m.Set("command", cmd)
+		m.Set("args", toAnySlice(args))
+		return util.McpEntryMatchesTool(toolID, command[0], command[1:], m)
+	}
+	return false
 }
 
 func removeCodexMcpBlocks(raw, toolID string) string {
@@ -672,7 +675,7 @@ var cursorMcpAdapter = agentMcpAdapter{
 	},
 	has: func(req core.McpRequest) bool {
 		if req.AnyShape {
-			return CursorMcpHas(req.ToolID)
+			return CursorMcpHasAny(req.ToolID)
 		}
 		return CursorMcpHas(req.ToolID) && HasCursorMcpPermissions(req.ToolID)
 	},

@@ -1,10 +1,14 @@
 package commands
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/HoangP8/tokless/internal/core"
 	headroompkg "github.com/HoangP8/tokless/internal/headroom"
@@ -16,10 +20,11 @@ func RunMcp(argv []string) int {
 	agent := ""
 	workspace := ""
 	contextMode := false
+	ctxAgent := ""
 	tool := ""
 	for len(argv) > 0 {
 		switch argv[0] {
-		case "--agent", "--workspace", "--tool":
+		case "--agent", "--workspace", "--tool", util.CtxAgentFlag:
 			if len(argv) < 2 || argv[1] == "" || strings.HasPrefix(argv[1], "--") {
 				return 1
 			}
@@ -30,6 +35,8 @@ func RunMcp(argv []string) int {
 				workspace = argv[1]
 			case "--tool":
 				tool = argv[1]
+			case util.CtxAgentFlag:
+				ctxAgent = argv[1]
 			}
 			argv = argv[2:]
 		case "--context-mode":
@@ -51,7 +58,10 @@ command:
 		return 1
 	}
 	util.EnsureProcessPath()
-	if strings.Contains(argv[0], string(filepath.Separator)) {
+	if contextMode {
+		argv = resolveContextModeArgv(argv, agent, ctxAgent, workspace)
+	}
+	if !contextMode && strings.Contains(argv[0], string(filepath.Separator)) {
 		util.PrependProcessPath(filepath.Dir(argv[0]))
 	}
 	codegraphPath := codegraphMcpCommand(argv)
@@ -99,7 +109,85 @@ command:
 	return runMcpProxyAfterStart(agent, path, argv, env, tool, afterStart)
 }
 
+// Test seam.
+var resolveContextMode = util.ResolveContextMode
 
+// contextModeProbeMajor runs the full configured command (cmd /c, npx, ...) with --version.
+var contextModeProbeMajor = func(argv []string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	args := append(append([]string{}, argv[1:]...), "--version")
+	r := util.Run(argv[0], args, util.RunOptions{Capture: true, Ctx: ctx})
+	if r.Code != 0 {
+		return 0
+	}
+	if m := regexp.MustCompile(`(\d+)\.\d+\.\d+`).FindStringSubmatch(r.Stdout); m != nil {
+		return util.VersionMajor(m[1])
+	}
+	return 0
+}
+
+// contextModeServerArgs builds the upstream `server` args. ctxAgent comes from
+// --ctx-agent; entries written before it existed fall back to the run-mcp agent.
+// vscode needs a real workspace folder, else the server runs as gemini (spawn dir).
+func contextModeServerArgs(agent, ctxAgent, workspace string) []string {
+	id := ctxAgent
+	if !slices.Contains(util.ContextModeAgentIDs, id) {
+		id = contextModeAgentID(agent)
+	}
+	if workspace == "${workspaceFolder}" {
+		workspace = ""
+	}
+	if id == "vscode" {
+		if workspace == "" {
+			id = "gemini"
+		} else {
+			return []string{"server", "--agent", id, "--workspace-folder", workspace}
+		}
+	}
+	return []string{"server", "--agent", id}
+}
+
+// configuredContextModeArgv is the fallback: 2.x prints help on stdio without "server".
+func configuredContextModeArgv(argv []string, agent, ctxAgent, workspace string) []string {
+	if len(argv) == 0 || contextModeProbeMajor(argv) < 2 {
+		return argv
+	}
+	if !contains(argv, "server") {
+		argv = append(argv, "server")
+	}
+	if !contains(argv, "--agent") {
+		argv = append(argv, contextModeServerArgs(agent, ctxAgent, workspace)[1:]...)
+	}
+	return argv
+}
+
+// Unknown ids map to gemini (project from the spawn dir); an empty agent under
+// CLAUDE_PROJECT_DIR becomes claude-code instead.
+func contextModeAgentID(agent string) string {
+	if agent == "" && os.Getenv("CLAUDE_PROJECT_DIR") != "" {
+		return "claude-code"
+	}
+	return util.ContextModeAgentFor(agent)
+}
+
+func resolveContextModeArgv(argv []string, agent, ctxAgent, workspace string) []string {
+	rt, err := resolveContextMode()
+	if err != nil || rt.Node == "" || rt.CLI == "" {
+		if err != nil {
+			util.L.Err("context-mode: " + err.Error() + "; using configured command")
+		}
+		return configuredContextModeArgv(argv, agent, ctxAgent, workspace)
+	}
+	if rt.Degraded {
+		util.L.Err("context-mode: needs Node >= " + rt.MinNode + "; only ctx_doctor available")
+	}
+	out := []string{rt.Node, rt.CLI}
+	if rt.Major2 {
+		out = append(out, contextModeServerArgs(agent, ctxAgent, workspace)...)
+	}
+	return out
+}
 
 // ensureProxyForAgent silently starts the headroom daemon when an MCP server is
 // being booted for an agent tokless wires to the proxy.

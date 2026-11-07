@@ -872,7 +872,7 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("antigravity", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	} else {
-		spawn = util.McpSpawnFor(toolID)
+		spawn = util.McpSpawnForAgent("antigravity", toolID)
 	}
 	allConfigured := true
 	for _, f := range antigravityMcpConfigFiles() {
@@ -905,7 +905,7 @@ func ConfigureAntigravityMcp(toolID string) (changed bool, file string) {
 			if jsonEqual(existing, entry) {
 				continue
 			}
-			if !antigravityAdoptableMcpEntry(existing, toolID) {
+			if !antigravityMcpManaged(toolID, existing) && !antigravityAdoptableMcpEntry(existing, toolID) {
 				allConfigured = false
 				continue
 			}
@@ -958,7 +958,7 @@ func AntigravityMcpBounded(toolID string) bool {
 			return false
 		}
 		existing, found := sm.Get(toolID)
-		if !found || !antigravityMcpManaged(toolID, existing) {
+		if !found || !antigravityMcpMatches(toolID, existing, false) {
 			return false
 		}
 		checkedAny = true
@@ -1214,7 +1214,12 @@ func removeAntigravityMcpFromFiles(toolID string, files []string) {
 	}
 }
 
+// antigravityMcpManaged accepts the current entry and, for context-mode, the pre-host-flag shape.
 func antigravityMcpManaged(toolID string, existing any) bool {
+	return antigravityMcpMatches(toolID, existing, true)
+}
+
+func antigravityMcpMatches(toolID string, existing any, legacyOK bool) bool {
 	em, ok := existing.(*util.OrderedMap)
 	if !ok {
 		return false
@@ -1223,11 +1228,14 @@ func antigravityMcpManaged(toolID string, existing any) bool {
 	args, _ := em.Get("args")
 	trust, _ := em.Get("trust")
 	cmdStr, _ := command.(string)
-	spawn := util.McpSpawnFor(toolID)
+	spawn := util.McpSpawnForAgent("antigravity", toolID)
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("antigravity", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	}
-	if util.CommandMatches(cmdStr, spawn.Command) && argsEq(args, spawn.Args) && trust == true {
+	if trust != true {
+		return false
+	}
+	if util.CommandMatches(cmdStr, spawn.Command) && (argsEq(args, spawn.Args) || (legacyOK && toolID == "context-mode" && argsEq(args, util.StripContextModeFlags(spawn.Args)))) {
 		return true
 	}
 	return util.McpEntryMatchesTool(toolID, spawn.Command, spawn.Args, existing)

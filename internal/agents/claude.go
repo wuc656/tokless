@@ -42,7 +42,7 @@ func ConfigureClaudeMcp(toolID string) (changed bool, file string) {
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("claude", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	} else {
-		spawn = util.McpSpawnFor(toolID)
+		spawn = util.McpSpawnForAgent("claude", toolID)
 	}
 	desired := util.NewOrderedMap()
 	desired.Set("type", "stdio")
@@ -54,7 +54,7 @@ func ConfigureClaudeMcp(toolID string) (changed bool, file string) {
 			AllowClaudeMcpToolProjectLocal(toolID)
 			return false, p.GlobalJSON
 		}
-		if !util.IsToklessOrToolMcpEntry(toolID, existing) {
+		if !claudeMcpPreHostFlags(existing, desired) && !util.IsToklessOrToolMcpEntry(toolID, existing) {
 			return false, p.GlobalJSON
 		}
 	}
@@ -89,7 +89,7 @@ func claudeMcpPermissionEntries(toolID string) []string {
 func claudeMcpToolNames(toolID string) []string {
 	switch toolID {
 	case "context-mode":
-		return []string{"ctx_search", "ctx_execute", "ctx_execute_file", "ctx_batch_execute", "ctx_index", "ctx_fetch_and_index"}
+		return []string{"ctx_search", "ctx_execute", "ctx_execute_file", "ctx_batch_execute", "ctx_batch", "ctx_index", "ctx_fetch_and_index"}
 	case "codegraph":
 		return []string{"codegraph_explore"}
 	}
@@ -228,6 +228,40 @@ func AllowClaudeMcpTool(toolID string) {
 	perms.Set("allow", allow)
 	cfg.Set("permissions", perms)
 	_ = util.WriteFile(p.Settings, util.StringifyJSON(cfg))
+}
+
+// ClaudeMcpAllowMissing reports a managed tool missing from permissions.allow; unparseable settings report false.
+func ClaudeMcpAllowMissing(toolID string) bool {
+	raw, ok := util.ReadFileSafe(util.ClaudeCodePaths().Settings)
+	if !ok || util.HasJSONCComments(raw) {
+		return false
+	}
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return false
+	}
+	var allow []any
+	if perms, ok := mapChild(cfg, "permissions"); ok {
+		if v, ok := perms.Get("allow"); ok {
+			if allow, ok = v.([]any); !ok {
+				return false
+			}
+		}
+	} else if _, exists := cfg.Get("permissions"); exists {
+		return false
+	}
+	have := map[string]bool{}
+	for _, x := range allow {
+		if s, ok := x.(string); ok {
+			have[s] = true
+		}
+	}
+	for _, entry := range claudeMcpPermissionEntries(toolID) {
+		if !have[entry] {
+			return true
+		}
+	}
+	return false
 }
 
 func removeClaudeContextModeWildcard(entries []any) []any {
@@ -446,7 +480,7 @@ func RemoveClaudeMcp(toolID string) bool {
 			if servers, ok := cfg.Get("mcpServers"); ok {
 				if sm, ok := servers.(*util.OrderedMap); ok {
 					if existing, has := sm.Get(toolID); has {
-						spawn := util.McpSpawnFor(toolID)
+						spawn := util.McpSpawnForAgent("claude", toolID)
 						if toolID == "codegraph" {
 							spawn = util.WrapAutoIndex("claude", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 						}
@@ -454,7 +488,7 @@ func RemoveClaudeMcp(toolID string) bool {
 						desired.Set("type", "stdio")
 						desired.Set("command", spawn.Command)
 						desired.Set("args", toAnySlice(spawn.Args))
-						if !claudeMcpEqual(existing, desired) && !util.IsToklessOrToolMcpEntry(toolID, existing) {
+						if !claudeMcpEqual(existing, desired) && !claudeMcpPreHostFlags(existing, desired) && !util.IsToklessOrToolMcpEntry(toolID, existing) {
 							return removed
 						}
 						sm.Delete(toolID)
@@ -658,6 +692,22 @@ func ClaudeOAuthWired() bool {
 }
 
 // claudeMcpEqual compares command/args/env by canonical JSON with path normalization.
+// claudeMcpPreHostFlags matches a context-mode entry written before host flags existed.
+func claudeMcpPreHostFlags(existing any, desired *util.OrderedMap) bool {
+	args, _ := desired.Get("args")
+	list, _ := args.([]any)
+	legacy := util.StripContextModeFlags(stringArgs(list))
+	if len(legacy) == len(list) {
+		return false
+	}
+	old := util.NewOrderedMap()
+	for _, k := range desired.Keys() {
+		v, _ := desired.Get(k)
+		old.Set(k, v)
+	}
+	old.Set("args", toAnySlice(legacy))
+	return claudeMcpEqual(existing, old)
+}
 func claudeMcpEqual(existing any, desired *util.OrderedMap) bool {
 	em, ok := existing.(*util.OrderedMap)
 	if !ok {

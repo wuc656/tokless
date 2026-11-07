@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -229,6 +230,11 @@ func RunInit(opts InitOptions) int {
 		nodeOK, gitOK = util.EnsureDeps(needNode, needGit, minNode)
 	}
 
+	allowNode := false
+	if !opts.DryRun {
+		allowNode = nodeInstallNotice(tools, opts.Upgrade, nodeOK)
+	}
+
 	if opts.NoAutostart && !opts.DryRun {
 		restartErr, err := setProxyAutostartOff()
 		if err != nil {
@@ -260,7 +266,7 @@ func RunInit(opts InitOptions) int {
 		report := func(phase string, frac float64) { toolBar.Step(phase, frac) }
 		installed := false
 		logs, err := util.CaptureLogs(func() error {
-			ok, e := tool.Install(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade, Report: report})
+			ok, e := tool.Install(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade, AllowNodeInstall: allowNode, Report: report})
 			installed = ok
 			return e
 		})
@@ -375,8 +381,9 @@ func RunInit(opts InitOptions) int {
 	failures = map[string][]string{}
 	wireLogs := map[string]string{}
 	type wireChange struct {
-		tool  *core.ToolManifest
-		agent string
+		tool    *core.ToolManifest
+		agent   string
+		refused bool
 	}
 	var wireChanges []wireChange
 	var cursorRollback func()
@@ -485,11 +492,13 @@ func RunInit(opts InitOptions) int {
 						}
 					}
 				}
-				if res, err := fn(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade}); err == nil {
+				res, wireErr := fn(core.RunOpts{DryRun: opts.DryRun, Upgrade: opts.Upgrade})
+				if wireErr == nil {
 					okWire = res
 				} else {
-					util.L.Err(err.Error())
+					util.L.Err(wireErr.Error())
 				}
+				refused := errors.Is(wireErr, agents.ErrOpenCodeConfigRefused)
 				if okWire && !opts.DryRun && !tool.InstructionOnly {
 					if verify, ok := tool.VerifyFor[agentID]; ok {
 						r := verify()
@@ -499,7 +508,7 @@ func RunInit(opts InitOptions) int {
 				if !okWire {
 					failed = append(failed, tool.Label)
 					if !opts.DryRun && !wasWired {
-						wireChanges = append(wireChanges, wireChange{tool: tool, agent: agentID})
+						wireChanges = append(wireChanges, wireChange{tool: tool, agent: agentID, refused: refused})
 					}
 				} else if !opts.DryRun && !wasWired {
 					wireChanges = append(wireChanges, wireChange{tool: tool, agent: agentID})
@@ -521,7 +530,7 @@ func RunInit(opts InitOptions) int {
 		for i := len(wireChanges) - 1; i >= 0; i-- {
 			change := wireChanges[i]
 			failedList, agentFailed := failures[change.agent]
-			if !agentFailed || !contains(failedList, change.tool.Label) {
+			if !agentFailed || !contains(failedList, change.tool.Label) || change.refused {
 				continue
 			}
 			if unwire, ok := change.tool.UnwireFor[change.agent]; ok {

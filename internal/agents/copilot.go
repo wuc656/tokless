@@ -34,11 +34,7 @@ func ideRoot() string {
 	if err != nil {
 		return "."
 	}
-	home := util.Home()
 	for {
-		if home != "" && filepath.Clean(dir) == filepath.Clean(home) {
-			return "."
-		}
 		for _, marker := range []string{".vscode", ".github", ".git"} {
 			if util.Exists(filepath.Join(dir, marker)) {
 				return dir
@@ -65,39 +61,6 @@ func copilotIdeInstructionsFile() string {
 	return filepath.Join(ideRoot(), ".github", "copilot-instructions.md")
 }
 
-// InstallCopilotContextModeHook writes the context-mode hook file.
-func InstallCopilotContextModeHook() {
-	_ = InstallCopilotContextModeHookSafe()
-}
-
-func InstallCopilotContextModeHookSafe() error {
-	p := util.CopilotPathsResolved()
-	if err := util.EnsureDir(p.HooksDir); err != nil {
-		return err
-	}
-
-	events := []struct{ event, token string }{
-		{"preToolUse", "pretooluse"},
-		{"postToolUse", "posttooluse"},
-		{"sessionStart", "sessionstart"},
-		{"userPromptSubmitted", "userpromptsubmit"},
-		{"agentStop", "stop"},
-		{"preCompact", "precompact"},
-	}
-	hooks := util.NewOrderedMap()
-	for _, e := range events {
-		h := util.NewOrderedMap()
-		h.Set("type", "command")
-		h.Set("command", "context-mode hook copilot-cli "+e.token)
-		hooks.Set(e.event, []any{h})
-	}
-
-	root := util.NewOrderedMap()
-	root.Set("version", 1)
-	root.Set("hooks", hooks)
-	return writeOwnedCopilotHook(copilotHooksFile("context-mode.json"), util.StringifyJSON(root), "context-mode hook copilot-cli")
-}
-
 func RemoveCopilotContextModeHook() {
 	_ = RemoveCopilotContextModeHookSafe()
 }
@@ -112,31 +75,6 @@ func HasCopilotContextModeHook() bool {
 	return ok && cfg != nil && copilotHookOwned(cfg, "context-mode hook copilot-cli")
 }
 
-// InstallCopilotIdeContextModeHook writes IDE context-mode hooks (.github/hooks/).
-func InstallCopilotIdeContextModeHook() {
-	_ = InstallCopilotIdeContextModeHookSafe()
-}
-
-func InstallCopilotIdeContextModeHookSafe() error {
-	if err := util.EnsureDir(copilotIdeHooksDir()); err != nil {
-		return err
-	}
-	events := []string{"PreToolUse", "PostToolUse", "SessionStart", "Stop"}
-	tokens := []string{"pretooluse", "posttooluse", "sessionstart", "stop"}
-	hooks := util.NewOrderedMap()
-	for i, ev := range events {
-		h := util.NewOrderedMap()
-		h.Set("type", "command")
-		h.Set("command", "context-mode hook copilot-vscode "+tokens[i])
-		h.Set("timeout", 10)
-		hooks.Set(ev, []any{h})
-	}
-	root := util.NewOrderedMap()
-	root.Set("version", 1)
-	root.Set("hooks", hooks)
-	return writeOwnedCopilotHook(copilotIdeHooksFile("context-mode.json"), util.StringifyJSON(root), "context-mode hook copilot-vscode")
-}
-
 func RemoveCopilotIdeContextModeHook() {
 	_ = RemoveCopilotIdeContextModeHookSafe()
 }
@@ -149,6 +87,17 @@ func HasCopilotIdeContextModeHook() bool {
 	raw, ok := util.ReadFileSafe(copilotIdeHooksFile("context-mode.json"))
 	cfg := util.TryParseJsonc(raw)
 	return ok && cfg != nil && copilotHookOwned(cfg, "context-mode hook copilot-vscode")
+}
+
+// MigrateCopilotContextModeHooks removes tokless-written hooks; context-mode 2.x is MCP-only.
+func MigrateCopilotContextModeHooks() {
+	for _, h := range []struct{ path, marker string }{
+		{copilotHooksFile("context-mode.json"), "context-mode hook copilot-cli"},
+		{copilotHooksFile("context-mode-vscode.json"), "context-mode hook copilot-vscode"},
+		{copilotIdeHooksFile("context-mode.json"), "context-mode hook copilot-vscode"},
+	} {
+		_ = removeOwnedCopilotHook(h.path, h.marker)
+	}
 }
 
 func copilotRtkHookCommand() string {
@@ -624,14 +573,9 @@ func ConfigureCopilotMcpSafe(toolID string) (changed bool, file string, err erro
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return false, p.McpConfig, readErr
 	}
-	rawStr := string(raw)
-	var cfg *util.OrderedMap
-	if len(strings.TrimSpace(rawStr)) > 0 {
-		var parseErr error
-		cfg, parseErr = util.ParseJsonc(rawStr)
-		if parseErr != nil {
-			return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s: %w", p.McpConfig, parseErr)
-		}
+	cfg := util.TryParseJsonc(string(raw))
+	if len(raw) > 0 && cfg == nil {
+		return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
 	}
 	if cfg == nil {
 		cfg = util.NewOrderedMap()
@@ -670,12 +614,9 @@ func RemoveCopilotMcpSafe(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
-	if strings.TrimSpace(raw) == "" {
-		return false, nil
-	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, nil
+		return false, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
 	}
 	servers, err := copilotMcpServers(cfg, "mcpServers", p.McpConfig)
 	if err != nil {
@@ -738,7 +679,7 @@ func configureCopilotIdeMcpLocked(toolID string) (changed bool, file string, err
 		return false, path, readErr
 	}
 	cfg := util.TryParseJsonc(string(raw))
-	if len(strings.TrimSpace(string(raw))) > 0 && cfg == nil {
+	if len(raw) > 0 && cfg == nil {
 		return false, path, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
 	}
 	if cfg == nil {
@@ -775,12 +716,20 @@ func copilotMcpServers(cfg *util.OrderedMap, key, path string) (*util.OrderedMap
 	return servers, nil
 }
 
+// copilotHarness is the context-mode host id for the CLI or the VS Code surface.
+func copilotHarness(ide bool) string {
+	if ide {
+		return "copilot-ide"
+	}
+	return "copilot"
+}
+
 func copilotMcpDesired(toolID string, ide bool) *util.OrderedMap {
 	var spawn util.McpSpawn
 	if toolID == "codegraph" {
 		spawn = util.WrapAutoIndex("copilot", util.PickMcpSpawn("codegraph", "serve", "--mcp"))
 	} else {
-		spawn = util.McpSpawnFor(toolID)
+		spawn = util.McpSpawnForAgent(copilotHarness(ide), toolID)
 	}
 	desired := util.NewOrderedMap()
 	if ide {
@@ -806,35 +755,40 @@ func copilotMcpDesired(toolID string, ide bool) *util.OrderedMap {
 	return desired
 }
 
+// copilotManagedMcpEntry also accepts the context-mode entry written before host flags existed.
 func copilotManagedMcpEntry(v any, toolID string, ide bool) bool {
-	return copilotMcpEqual(v, copilotMcpDesired(toolID, ide)) || util.IsToklessOrToolMcpEntry(toolID, v)
+	desired := copilotMcpDesired(toolID, ide)
+	if copilotMcpEqual(v, desired) {
+		return true
+	}
+	args, _ := desired.Get("args")
+	list, _ := args.([]any)
+	legacy := util.StripContextModeFlags(stringArgs(list))
+	if toolID != "context-mode" || len(legacy) == len(list) {
+		return false
+	}
+	old := util.NewOrderedMap()
+	for _, k := range desired.Keys() {
+		val, _ := desired.Get(k)
+		old.Set(k, val)
+	}
+	old.Set("args", toAnySlice(legacy))
+	return copilotMcpEqual(v, old)
 }
 
 func copilotMcpEqual(existing any, desired *util.OrderedMap) bool {
 	em, ok := existing.(*util.OrderedMap)
-	if !ok {
+	if !ok || em.Len() != desired.Len() {
 		return false
 	}
-	desCmd, _ := desired.Get("command")
-	desArgs, _ := desired.Get("args")
-	haveCmd, _ := em.Get("command")
-	haveArgs, _ := em.Get("args")
-	haveCmdStr, _ := haveCmd.(string)
-	desCmdStr, _ := desCmd.(string)
-	var desArgsSlice []string
-	if sList, ok := desArgs.([]any); ok {
-		for _, x := range sList {
-			if s, ok := x.(string); ok {
-				desArgsSlice = append(desArgsSlice, s)
-			}
+	for _, key := range desired.Keys() {
+		want, _ := desired.Get(key)
+		have, ok := em.Get(key)
+		if !ok || jsonString(have) != jsonString(want) {
+			return false
 		}
-	} else if sList, ok := desArgs.([]string); ok {
-		desArgsSlice = sList
 	}
-	if util.CommandMatches(haveCmdStr, desCmdStr) && util.ArgsEqual(haveArgs, desArgsSlice) {
-		return true
-	}
-	return util.McpEntryMatchesTool(desCmdStr, desCmdStr, desArgsSlice, em)
+	return true
 }
 
 func jsonString(v any) string {
@@ -862,12 +816,9 @@ func removeCopilotIdeMcpLocked(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
-	if strings.TrimSpace(raw) == "" {
-		return false, nil
-	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, nil
+		return false, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
 	}
 	serversValue, exists := cfg.Get("servers")
 	if !exists {
@@ -913,8 +864,7 @@ func CopilotMcpBounded(toolID string, ide bool) bool {
 		return false
 	}
 	existing, found := sm.Get(toolID)
-	desired := copilotMcpDesired(toolID, ide)
-	return found && (copilotMcpEqual(existing, desired) || util.IsToklessOrToolMcpEntry(toolID, existing))
+	return found && copilotMcpEqual(existing, copilotMcpDesired(toolID, ide))
 }
 
 
@@ -964,7 +914,7 @@ func CopilotTransactionFileOwned(path string) bool {
 		}
 		servers, ok := cfg.Get(key)
 		entries, ok := servers.(*util.OrderedMap)
-		if !ok || cfg.Len() != 1 {
+		if !ok || entries.Len() == 0 || cfg.Len() != 1 {
 			return false
 		}
 		for _, toolID := range entries.Keys() {

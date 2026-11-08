@@ -966,7 +966,6 @@ func AntigravityMcpBounded(toolID string) bool {
 	return checkedAny
 }
 
-
 // AntigravityMcpHas reports whether at least one supported global MCP config
 // registers the tool. Unreadable or malformed files are skipped.
 func AntigravityMcpHas(toolID string) bool {
@@ -1244,4 +1243,3 @@ func antigravityMcpMatches(toolID string, existing any, legacyOK bool) bool {
 func antigravityAdoptableMcpEntry(existing any, toolID string) bool {
 	return util.IsToklessOrToolMcpEntry(toolID, existing)
 }
-

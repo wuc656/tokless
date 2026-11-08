@@ -26,7 +26,7 @@ func TestUninstallSelectiveFlags(t *testing.T) {
 	// fake an opencode install (config dir present) + wired context-mode
 	os.WriteFile(filepath.Join(oc, "opencode.json"),
 		[]byte(`{"plugin":["context-mode"],"mcp":{"context-mode":{"type":"local"}}}`), 0o644)
-	
+
 	code := RunUninstall(InitOptions{Agents: []string{"opencode"}, Tools: []string{"codegraph"}})
 	if code != 0 {
 		t.Fatalf("exit=%d", code)
@@ -241,4 +241,3 @@ func TestResyncWiring_SkipsUnwiredAgent(t *testing.T) {
 		}
 	}
 }
-

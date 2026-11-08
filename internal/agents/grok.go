@@ -91,7 +91,6 @@ func GrokContextModeMcpHas() bool {
 	return ok && enabled && !grokMcpDisabled(raw, "context-mode") && grokToklessCommand(command) && grokContextModeArgs(args) && util.ContextModeFlagsCurrent("grok", args)
 }
 
-
 func grokMcpDisabled(raw, toolID string) bool {
 	_, _, servers, ok := grokDisabledServers(raw)
 	if !ok {

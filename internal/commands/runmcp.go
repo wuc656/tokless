@@ -284,4 +284,3 @@ func isCodegraphCommand(p string) bool {
 	base := strings.ToLower(filepath.Base(strings.ReplaceAll(p, "\\", "/")))
 	return base == "codegraph" || base == "codegraph.cmd" || base == "codegraph.exe" || base == "codegraph.bat"
 }
-

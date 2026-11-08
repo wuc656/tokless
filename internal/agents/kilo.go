@@ -232,7 +232,6 @@ func kiloExpectedCommand(toolID string, command []string) bool {
 	}
 }
 
-
 func kiloContextServer(command []string) bool {
 	if len(command) == 1 {
 		return kiloCommandBase(command[0]) == "context-mode"

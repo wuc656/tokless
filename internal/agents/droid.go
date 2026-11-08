@@ -249,7 +249,6 @@ func DroidMcpBounded(toolID string) bool {
 	return (util.CommandMatches(ecStr, spawn.Command) && argsEq(ea, spawn.Args) && enabledToolsEq(et, droidEnabledTools[toolID])) || util.McpEntryMatchesTool(toolID, spawn.Command, spawn.Args, em)
 }
 
-
 // DroidMcpHas reports whether ~/.factory/mcp.json registers the tool.
 func DroidMcpHas(toolID string) bool {
 	raw, ok := util.ReadFileSafe(droidMcpFile())
@@ -319,7 +318,6 @@ var ContextModeDroidToolNames = []string{
 var CodegraphDroidToolNames = []string{
 	"codegraph_explore",
 }
-
 
 // --- hooks management ---
 
@@ -626,7 +624,6 @@ func RemoveDroidCodegraphIndexHook() {
 func HasDroidCodegraphIndexHook() bool {
 	return droidHasHook("SessionStart", "index --auto droid")
 }
-
 
 // --- Context-Mode: MCP + AGENTS.md instruction only, no PreToolUse hook (agy pattern) ---
 

@@ -464,7 +464,6 @@ func TestInitIdempotent(t *testing.T) {
 	}
 }
 
-
 func TestInitPiWiring(t *testing.T) {
 	t.Setenv("TOKLESS_TEST", "1")
 	tempdir := t.TempDir()

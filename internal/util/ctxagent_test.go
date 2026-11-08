@@ -69,7 +69,7 @@ func TestContextModeSpawnForKeepsTarget(t *testing.T) {
 	if len(spawn.Args) < 5 || spawn.Args[0] != "run-mcp" || spawn.Args[1] != "--context-mode" || spawn.Args[2] != CtxAgentFlag || spawn.Args[3] != "codex" {
 		t.Fatalf("spawn = %v", spawn.Args)
 	}
-	if got := McpSpawnForAgent("codex", "projectmem"); slices.Contains(got.Args, CtxAgentFlag) {
+	if got := McpSpawnForAgent("codex", "codegraph"); slices.Contains(got.Args, CtxAgentFlag) {
 		t.Fatalf("non context-mode tool got host flags: %v", got.Args)
 	}
 }

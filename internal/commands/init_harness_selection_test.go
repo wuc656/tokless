@@ -64,7 +64,6 @@ func seedAgentInstalled(t *testing.T, agentID string) {
 	}
 }
 
-
 func TestInitSelectedToolsAcrossRegisteredAgents(t *testing.T) {
 	agents.Register()
 	tools.Register()

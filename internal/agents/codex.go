@@ -1809,4 +1809,3 @@ func Register() {
 	core.RegisterAgent(dsh)
 	core.RegisterAgent(amp)
 }
-

@@ -18,8 +18,8 @@ const kimiRouteHeader = "X-Tokless-Route"
 // OpenAI front (8787/v1) and carry the real upstream in these two headers so
 // headroom compresses and forwards to the actual API, mirroring opencode.
 const (
-	kimiHeadroomBaseURLHeader    = "x-headroom-base-url"
-	kimiHeadroomOriginalPathHdr  = "x-headroom-original-path"
+	kimiHeadroomBaseURLHeader   = "x-headroom-base-url"
+	kimiHeadroomOriginalPathHdr = "x-headroom-original-path"
 )
 
 // Kimi's config.toml uses quoted dotted provider headers such as

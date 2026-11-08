@@ -438,8 +438,6 @@ func doctorProxyDetails(reports []agentReport) []string {
 	return rows
 }
 
-
-
 func doctorMissingTools(tools []*core.ToolManifest, agentID string) []string {
 	var missing []string
 	for _, tool := range tools {
@@ -666,7 +664,6 @@ func doctorAgentRows(r agentReport) []string {
 			}
 			continue
 		}
-
 
 		var detail string
 		if passed == nil || !*passed {

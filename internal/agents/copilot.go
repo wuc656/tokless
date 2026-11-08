@@ -34,7 +34,11 @@ func ideRoot() string {
 	if err != nil {
 		return "."
 	}
+	home := util.Home()
 	for {
+		if home != "" && filepath.Clean(dir) == filepath.Clean(home) {
+			return "."
+		}
 		for _, marker := range []string{".vscode", ".github", ".git"} {
 			if util.Exists(filepath.Join(dir, marker)) {
 				return dir
@@ -551,7 +555,6 @@ func HasCopilotCodegraphIndexHook() bool {
 	return ok && cfg != nil && copilotHookOwned(cfg, "copilot-hook codegraph-index")
 }
 
-
 func HasCopilotRtkHook() bool {
 	raw, ok := util.ReadFileSafe(copilotHooksFile("tokless-rtk.json"))
 	cfg := util.TryParseJsonc(raw)
@@ -573,9 +576,14 @@ func ConfigureCopilotMcpSafe(toolID string) (changed bool, file string, err erro
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return false, p.McpConfig, readErr
 	}
-	cfg := util.TryParseJsonc(string(raw))
-	if len(raw) > 0 && cfg == nil {
-		return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
+	rawStr := string(raw)
+	var cfg *util.OrderedMap
+	if len(strings.TrimSpace(rawStr)) > 0 {
+		var parseErr error
+		cfg, parseErr = util.ParseJsonc(rawStr)
+		if parseErr != nil {
+			return false, p.McpConfig, fmt.Errorf("invalid Copilot MCP config %s: %w", p.McpConfig, parseErr)
+		}
 	}
 	if cfg == nil {
 		cfg = util.NewOrderedMap()
@@ -614,9 +622,12 @@ func RemoveCopilotMcpSafe(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, fmt.Errorf("invalid Copilot MCP config %s", p.McpConfig)
+		return false, nil
 	}
 	servers, err := copilotMcpServers(cfg, "mcpServers", p.McpConfig)
 	if err != nil {
@@ -678,9 +689,14 @@ func configureCopilotIdeMcpLocked(toolID string) (changed bool, file string, err
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return false, path, readErr
 	}
-	cfg := util.TryParseJsonc(string(raw))
-	if len(raw) > 0 && cfg == nil {
-		return false, path, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
+	rawStr := string(raw)
+	var cfg *util.OrderedMap
+	if len(strings.TrimSpace(rawStr)) > 0 {
+		var parseErr error
+		cfg, parseErr = util.ParseJsonc(rawStr)
+		if parseErr != nil {
+			return false, path, fmt.Errorf("invalid Copilot VS Code MCP config %s: %w", path, parseErr)
+		}
 	}
 	if cfg == nil {
 		cfg = util.NewOrderedMap()
@@ -764,31 +780,45 @@ func copilotManagedMcpEntry(v any, toolID string, ide bool) bool {
 	args, _ := desired.Get("args")
 	list, _ := args.([]any)
 	legacy := util.StripContextModeFlags(stringArgs(list))
-	if toolID != "context-mode" || len(legacy) == len(list) {
-		return false
+	if toolID == "context-mode" && len(legacy) != len(list) {
+		old := util.NewOrderedMap()
+		for _, k := range desired.Keys() {
+			val, _ := desired.Get(k)
+			old.Set(k, val)
+		}
+		old.Set("args", toAnySlice(legacy))
+		if copilotMcpEqual(v, old) {
+			return true
+		}
 	}
-	old := util.NewOrderedMap()
-	for _, k := range desired.Keys() {
-		val, _ := desired.Get(k)
-		old.Set(k, val)
-	}
-	old.Set("args", toAnySlice(legacy))
-	return copilotMcpEqual(v, old)
+	return util.IsToklessOrToolMcpEntry(toolID, v)
 }
 
 func copilotMcpEqual(existing any, desired *util.OrderedMap) bool {
 	em, ok := existing.(*util.OrderedMap)
-	if !ok || em.Len() != desired.Len() {
+	if !ok {
 		return false
 	}
-	for _, key := range desired.Keys() {
-		want, _ := desired.Get(key)
-		have, ok := em.Get(key)
-		if !ok || jsonString(have) != jsonString(want) {
-			return false
+	desCmd, _ := desired.Get("command")
+	desArgs, _ := desired.Get("args")
+	haveCmd, _ := em.Get("command")
+	haveArgs, _ := em.Get("args")
+	haveCmdStr, _ := haveCmd.(string)
+	desCmdStr, _ := desCmd.(string)
+	var desArgsSlice []string
+	if sList, ok := desArgs.([]any); ok {
+		for _, x := range sList {
+			if s, ok := x.(string); ok {
+				desArgsSlice = append(desArgsSlice, s)
+			}
 		}
+	} else if sList, ok := desArgs.([]string); ok {
+		desArgsSlice = sList
 	}
-	return true
+	if util.CommandMatches(haveCmdStr, desCmdStr) && util.ArgsEqual(haveArgs, desArgsSlice) {
+		return true
+	}
+	return false
 }
 
 func jsonString(v any) string {
@@ -816,9 +846,12 @@ func removeCopilotIdeMcpLocked(toolID string) (bool, error) {
 		return false, err
 	}
 	raw := string(contents)
+	if strings.TrimSpace(raw) == "" {
+		return false, nil
+	}
 	cfg := util.TryParseJsonc(raw)
 	if cfg == nil {
-		return false, fmt.Errorf("invalid Copilot VS Code MCP config %s", path)
+		return false, nil
 	}
 	serversValue, exists := cfg.Get("servers")
 	if !exists {
@@ -864,9 +897,18 @@ func CopilotMcpBounded(toolID string, ide bool) bool {
 		return false
 	}
 	existing, found := sm.Get(toolID)
-	return found && copilotMcpEqual(existing, copilotMcpDesired(toolID, ide))
+	if !found {
+		return false
+	}
+	desired := copilotMcpDesired(toolID, ide)
+	if copilotMcpEqual(existing, desired) {
+		return true
+	}
+	if toolID != "context-mode" && util.IsToklessOrToolMcpEntry(toolID, existing) {
+		return true
+	}
+	return false
 }
-
 
 func CopilotIdeMcpHas(toolID string) bool {
 	raw, ok := util.ReadFileSafe(copilotIdeMcpFile())

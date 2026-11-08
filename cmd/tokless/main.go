@@ -121,7 +121,6 @@ func termWidth() int {
 	return 80
 }
 
-
 func fitList(items []string, width, prefixW int) string {
 	avail := width - prefixW
 	if avail < 12 {

@@ -65,7 +65,7 @@ var C = Colors{
 	Cyan:      wrap(36, 39),
 	Gray:      wrap(2, 22),
 	Orange:    wrapFg256(208),
-	Soft: wrapFg256(111),
+	Soft:      wrapFg256(111),
 }
 
 // Symbols carries unicode glyphs with ascii fallbacks.

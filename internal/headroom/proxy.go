@@ -50,18 +50,18 @@ type proxySupervisedState struct {
 
 var (
 	proxyDisableAutostart = DisableProxyAutostart
-	proxyLiveZProbe      = proxyLiveZ
-	proxySpawn           = spawnDetached
-	proxyIdentity        = identifyProcess
-	proxyKill            = killProcess
-	proxyFindProcess     = os.FindProcess
-	proxyWrite           = writeProxyOwnership
-	proxyGone            = processGone
-	proxyWait            = func(proc *os.Process) error { _, err := proc.Wait(); return err }
-	proxySleep           = time.Sleep
-	proxyNow             = time.Now
-	proxyServingPIDProbe = proxyServingPID
-	proxyProcessEnv      = readProcessEnv
+	proxyLiveZProbe       = proxyLiveZ
+	proxySpawn            = spawnDetached
+	proxyIdentity         = identifyProcess
+	proxyKill             = killProcess
+	proxyFindProcess      = os.FindProcess
+	proxyWrite            = writeProxyOwnership
+	proxyGone             = processGone
+	proxyWait             = func(proc *os.Process) error { _, err := proc.Wait(); return err }
+	proxySleep            = time.Sleep
+	proxyNow              = time.Now
+	proxyServingPIDProbe  = proxyServingPID
+	proxyProcessEnv       = readProcessEnv
 )
 
 func ProxyPort() int         { return util.HeadroomProxyPort() }

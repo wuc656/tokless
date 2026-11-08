@@ -14,6 +14,7 @@ import (
 )
 
 const defaultRegistryURL = "https://registry.npmjs.org/"
+
 var npmInstallTimeout = 15 * time.Minute
 var npmConfigTimeout = 30 * time.Second
 

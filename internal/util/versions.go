@@ -306,7 +306,7 @@ func GatherVersionsForce() map[string]VersionInfo { return gatherVersions(true) 
 
 func GatherVersionsForceFor(ids []string) map[string]VersionInfo { return gatherVersions(true, ids...) }
 
-var versionChannels = map[string]string{"rtk": "github", "codegraph": "npm", "context-mode": "npm", "tokless": "npm", "headroom": "uv", "projectmem": "uv"}
+var versionChannels = map[string]string{"rtk": "github", "codegraph": "npm", "context-mode": "npm", "tokless": "npm", "headroom": "uv"}
 
 // gatherVersions probes ids (all tools when empty).
 func gatherVersions(force bool, ids ...string) map[string]VersionInfo {
@@ -315,8 +315,8 @@ func gatherVersions(force bool, ids ...string) map[string]VersionInfo {
 			"rtk":          {Installed: strp("0.43.0"), Latest: strp("0.43.0"), Channel: "github", Present: false},
 			"codegraph":    {Installed: nil, Latest: strp("1.1.6"), Channel: "npm", Present: false},
 			"context-mode": {Installed: nil, Latest: strp("1.0.169"), Channel: "npm", Present: false},
-		"headroom":     {Installed: strp("0.35.0"), Latest: strp("0.35.0"), Channel: "uv", Present: HeadroomInstalled()},
-		"tokless":      {Installed: strp("0.1.0"), Latest: strp("0.1.0"), Channel: "npm", Present: false},
+			"headroom":     {Installed: strp("0.35.0"), Latest: strp("0.35.0"), Channel: "uv", Present: HeadroomInstalled()},
+			"tokless":      {Installed: strp("0.1.0"), Latest: strp("0.1.0"), Channel: "npm", Present: false},
 		}
 		if len(ids) == 0 {
 			return all

@@ -15,7 +15,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
 )
 
 func TestMcpChildEnvPassThrough(t *testing.T) {
@@ -650,7 +649,6 @@ func TestScrubPrefixProtectionDoesNotMatchLongerName(t *testing.T) {
 		t.Fatalf("kept tool name corrupted: got %v", got)
 	}
 }
-
 
 func TestScrubEmptyHiddenSetPassesThroughUnchanged(t *testing.T) {
 	upstream := `{"jsonrpc":"2.0","id":1,"result":{"tools":[

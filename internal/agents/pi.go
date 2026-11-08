@@ -568,7 +568,6 @@ func PiMcpBounded(toolID string) bool {
 	return found && isMap && piMcpEntryMatches(em, piMcpSpawn(toolID))
 }
 
-
 func PiMcpHas(toolID string) bool {
 	raw, ok := util.ReadFileSafe(piMcpFile())
 	if !ok {

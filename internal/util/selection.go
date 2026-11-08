@@ -7,8 +7,8 @@ import (
 
 // SelectionStore stores the selected tool mode and IDs.
 type SelectionStore struct {
-	Mode   string   // "full" or "selected"
-	Tools  []string // selected tool IDs (when Mode == "selected")
+	Mode  string   // "full" or "selected"
+	Tools []string // selected tool IDs (when Mode == "selected")
 }
 
 // SelectionPath returns the selection file path.

@@ -811,13 +811,8 @@ func getOrCreateMap(m *util.OrderedMap, key string) *util.OrderedMap {
 	return om
 }
 
-func toAnySlice(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
+func toAnySlice(ss []string) []any { return util.ToAnySlice(ss) }
+func toAny(ss []string) []any      { return util.ToAnySlice(ss) }
 
 func jsonStr(v any) string {
 	b, _ := json.Marshal(v)

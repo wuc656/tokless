@@ -243,7 +243,7 @@ func ctxWireClaude(opts core.RunOpts) (bool, error) {
 		entry := util.NewOrderedMap()
 		entry.Set("type", "stdio")
 		entry.Set("command", spawn.Command)
-		entry.Set("args", toAny(spawn.Args))
+		entry.Set("args", util.ToAnySlice(spawn.Args))
 		servers.Set("context-mode", entry)
 		_ = util.WriteFile(cp.GlobalJSON, util.StringifyJSON(cfg))
 		agents.AllowClaudeMcpTool("context-mode")
@@ -1002,12 +1002,4 @@ func getArr(m *util.OrderedMap, key string) []any {
 		}
 	}
 	return []any{}
-}
-
-func toAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
 }

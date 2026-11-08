@@ -59,6 +59,15 @@ func CommandMatches(have, want string) bool {
 	return baseHave == baseWant
 }
 
+// ToAnySlice converts []string into []any.
+func ToAnySlice(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
 // ArgsEqual checks if a (which can be []any or []string) equals b ([]string) with
 // tolerance for case insensitivity and path format on Windows.
 func ArgsEqual(a any, b []string) bool {

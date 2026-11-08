@@ -452,14 +452,6 @@ func stringSlicesEqual(a, b []string) bool {
 	return true
 }
 
-func toAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
 func kiloKnownBinDirs() []string {
 	return []string{filepath.Join(util.Home(), ".kilo", "bin")}
 }

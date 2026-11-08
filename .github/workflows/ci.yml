@@ -34,6 +34,11 @@ jobs:
           test -z "$(gofmt -l cmd internal)"
           go vet ./...
 
+      - name: Vulnerability Check
+        if: runner.os == 'Linux'
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
       - name: Test
         env:
           CGO_ENABLED: "1"

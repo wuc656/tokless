@@ -29,12 +29,17 @@ jobs:
           go build -o ./bin/ ./cmd/tokless
           echo "$PWD/bin" >> "$GITHUB_PATH"
 
+      - name: Static Analysis
+        run: |
+          test -z "$(gofmt -l cmd internal)"
+          go vet ./...
+
       - name: Test
         env:
           CGO_ENABLED: "1"
         run: |
-          npm install -g context-mode@latest @colbymchenry/codegraph --silent || true
-          go test -count=1 ./...
+          npm install -g context-mode@latest @colbymchenry/codegraph
+          go test -p 2 -count=1 ./...
 
       - name: Build
         run: go build ./...
@@ -48,8 +53,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $errs = $null
-          $tokens = $null
-          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/scripts/install.ps1", [ref]$tokens, [ref]$errs) | Out-Null
-          if ($errs) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }
-          Write-Output "install.ps1 parses OK"
+          foreach ($script in @("scripts/install.ps1", "scripts/build-release.ps1")) {
+            $errs = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile("$PWD/$script", [ref]$tokens, [ref]$errs) | Out-Null
+            if ($errs) { $errs | ForEach-Object { Write-Error $_.Message }; exit 1 }
+            Write-Output "$script parses OK"
+          }

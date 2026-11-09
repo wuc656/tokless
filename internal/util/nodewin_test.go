@@ -5,7 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -135,5 +138,57 @@ func TestExtractZipStripRoot(t *testing.T) {
 	evilPath := filepath.Join(tmpDir, "evil.txt")
 	if _, err := os.Stat(evilPath); !os.IsNotExist(err) {
 		t.Errorf("Evil file was extracted to %s", evilPath)
+	}
+}
+
+func TestWriteExtractedFileOverwritesLockedExecutable(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-specific locked executable test")
+	}
+	tmpDir := t.TempDir()
+	exePath := filepath.Join(tmpDir, "dummy.exe")
+	// Copy a real Windows executable that runs in background
+	timeoutExe := filepath.Join(os.Getenv("WINDIR"), "System32", "timeout.exe")
+	if !Exists(timeoutExe) {
+		t.Skip("timeout.exe not found")
+	}
+	srcBytes, err := os.ReadFile(timeoutExe)
+	if err != nil {
+		t.Skip("cannot read timeout.exe")
+	}
+	if err := os.WriteFile(exePath, srcBytes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Spawn the executable so it is locked by Windows
+	cmd := exec.Command(exePath, "30")
+	if err := cmd.Start(); err != nil {
+		t.Skip("failed to start timeout.exe:", err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = os.Remove(exePath + ".old")
+	}()
+
+	// Verify direct OpenFile with O_TRUNC fails with permission error
+	_, directErr := os.OpenFile(exePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if directErr == nil {
+		t.Fatal("expected permission error when opening running executable directly")
+	}
+
+	// Verify writeExtractedFile safely handles the lock via .old rename
+	newContent := "new-version-binary"
+	if err := writeExtractedFile(exePath, strings.NewReader(newContent), 0o755); err != nil {
+		t.Fatalf("writeExtractedFile failed to overwrite running binary: %v", err)
+	}
+
+	// Verify new content was written
+	readBack, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(readBack) != newContent {
+		t.Fatalf("expected %q, got %q", newContent, string(readBack))
 	}
 }

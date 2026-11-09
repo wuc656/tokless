@@ -151,21 +151,37 @@ func extractZip(zipPath, dest string, stripRoot bool) error {
 		if err != nil {
 			return err
 		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
-		if err != nil {
-			rc.Close()
-			return err
-		}
-		_, err = io.Copy(out, rc)
+		writeErr := writeExtractedFile(target, rc, 0o755)
 		rc.Close()
-		if cerr := out.Close(); err == nil {
-			err = cerr
-		}
-		if err != nil {
-			return err
+		if writeErr != nil {
+			return writeErr
 		}
 	}
 	return nil
+}
+
+// writeExtractedFile writes an extracted file to target. On Windows, if target exists
+// and is locked by a running process, it renames the existing file to a .old temp file
+// so the replacement file can be written without Access Denied errors.
+func writeExtractedFile(target string, src io.Reader, mode os.FileMode) error {
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		// Attempt rename of the existing file to an .old file (Windows allows moving a running executable)
+		oldPath := target + ".old"
+		_ = os.Remove(oldPath)
+		if renErr := os.Rename(target, oldPath); renErr == nil {
+			out, err = os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+			_ = os.Remove(oldPath) // Will succeed if unlocked, or stay until process terminates
+		}
+	}
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, src)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 // nodeInstallDir is the user-local home for the zip-installed Node.

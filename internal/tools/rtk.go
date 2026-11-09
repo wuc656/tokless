@@ -89,6 +89,8 @@ func rtkEnsureInstalled(opts core.RunOpts) (bool, error) {
 		util.InstallCargo()
 	}
 	if util.Which("cargo") != "" {
+		opts.Reportf("compiling from source via cargo", 0.6)
+		util.L.Sub("compiling rtk via cargo (may take a few minutes)…")
 		r := util.Run("cargo", []string{"install", "--git", "https://github.com/rtk-ai/rtk", "rtk"}, util.RunOptions{})
 		if r.Code == 0 {
 			return true, nil
@@ -105,6 +107,7 @@ func rtkInstallPrebuilt(asset string, opts core.RunOpts) bool {
 	opts.Reportf("downloading binary", 0.3)
 	util.L.Sub("downloading " + asset + "…")
 	if util.IsWin {
+		opts.Reportf("extracting binary", 0.7)
 		if err := util.DownloadAndExtractZip(url, dest); err != nil {
 			return false
 		}

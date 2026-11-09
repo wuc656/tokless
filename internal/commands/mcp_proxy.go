@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/HoangP8/tokless/internal/util"
 )
 
 // runMcpProxy spawns the MCP server as a child and proxies stdio.
@@ -702,7 +704,71 @@ func resolveMcpCommand(path string, argv []string) (string, []string) {
 			return nodePath, append([]string{path}, argv[1:]...)
 		}
 	}
+	if runtime.GOOS == "windows" {
+		if exe, args, ok := resolveWindowsBatchToNode(path, argv); ok {
+			return exe, args
+		}
+	}
 	return path, normalizedCmdBatchArgs(path, argv[1:], runtime.GOOS == "windows")
+}
+
+var reNpmBatchTarget = regexp.MustCompile(`(?i)(?:%_prog%|%NODE_EXE%|node(?:\.exe)?)"?\s+"([^"]+\.(?:js|mjs|cjs))"`)
+
+func resolveWindowsBatchToNode(command string, argv []string) (string, []string, bool) {
+	base := strings.ToLower(filepath.Base(strings.ReplaceAll(command, "\\", "/")))
+	var batchPath string
+	var tail []string
+	if (base == "cmd" || base == "cmd.exe") {
+		args := argv
+		if len(args) > 0 && strings.EqualFold(args[0], command) {
+			args = args[1:]
+		}
+		if len(args) >= 2 && strings.EqualFold(args[0], "/c") {
+			batchPath = args[1]
+			if len(args) > 2 {
+				tail = args[2:]
+			}
+		} else {
+			return "", nil, false
+		}
+	} else if ext := strings.ToLower(filepath.Ext(command)); ext == ".cmd" || ext == ".bat" {
+		batchPath = command
+		args := argv
+		if len(args) > 0 && strings.EqualFold(args[0], command) {
+			args = args[1:]
+		}
+		tail = args
+	} else {
+		return "", nil, false
+	}
+
+	content, err := os.ReadFile(batchPath)
+	if err != nil {
+		return "", nil, false
+	}
+	m := reNpmBatchTarget.FindSubmatch(content)
+	if m == nil {
+		return "", nil, false
+	}
+	relJS := string(m[1])
+	relJS = strings.ReplaceAll(relJS, "%dp0%\\", "")
+	relJS = strings.ReplaceAll(relJS, "%~dp0\\", "")
+	relJS = strings.ReplaceAll(relJS, "%dp0%/", "")
+	relJS = strings.ReplaceAll(relJS, "%~dp0/", "")
+	targetJS := filepath.Join(filepath.Dir(batchPath), filepath.FromSlash(relJS))
+	if !util.Exists(targetJS) {
+		return "", nil, false
+	}
+
+	nodeExe := util.ResolveNodeBinary()
+	if nodeExe == "" {
+		if lp, err := exec.LookPath("node"); err == nil {
+			nodeExe = lp
+		} else {
+			return "", nil, false
+		}
+	}
+	return nodeExe, append([]string{targetJS}, tail...), true
 }
 
 func normalizedCmdBatchArgs(command string, args []string, windows bool) []string {

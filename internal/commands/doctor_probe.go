@@ -266,11 +266,14 @@ func looksLikeCodegraph(path string, args []string) bool {
 	if base == "codegraph" {
 		return true
 	}
+	if strings.Contains(strings.ToLower(filepath.ToSlash(path)), "/@colbymchenry/codegraph/") {
+		return true
+	}
 	for _, a := range args {
 		b := strings.ToLower(filepath.Base(strings.ReplaceAll(a, "\\", "/")))
 		b = strings.TrimSuffix(b, ".cmd")
 		b = strings.TrimSuffix(b, ".bat")
-		if b == "codegraph" {
+		if b == "codegraph" || strings.Contains(strings.ToLower(filepath.ToSlash(a)), "/@colbymchenry/codegraph/") {
 			return true
 		}
 	}

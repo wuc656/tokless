@@ -89,7 +89,7 @@ func rtkEnsureInstalled(opts core.RunOpts) (bool, error) {
 		util.InstallCargo()
 	}
 	if util.Which("cargo") != "" {
-		r := util.Run("cargo", []string{"install", "--git", "https://github.com/rtk-ai/rtk"}, util.RunOptions{})
+		r := util.Run("cargo", []string{"install", "--git", "https://github.com/rtk-ai/rtk", "rtk"}, util.RunOptions{})
 		if r.Code == 0 {
 			return true, nil
 		}
@@ -105,13 +105,12 @@ func rtkInstallPrebuilt(asset string, opts core.RunOpts) bool {
 	opts.Reportf("downloading binary", 0.3)
 	util.L.Sub("downloading " + asset + "…")
 	if util.IsWin {
-		ps := strings.Join([]string{
-			"$ErrorActionPreference='Stop'",
-			"Invoke-WebRequest -UseBasicParsing -Uri '" + url + "' -OutFile $env:TEMP\\rtk.zip",
-			"Expand-Archive -Force -Path $env:TEMP\\rtk.zip -DestinationPath '" + dest + "'",
-			"Remove-Item $env:TEMP\\rtk.zip",
-		}, "; ")
-		if util.Run("powershell", []string{"-NoProfile", "-Command", ps}, util.RunOptions{}).Code != 0 {
+		if err := util.DownloadAndExtractZip(url, dest); err != nil {
+			return false
+		}
+		rtkBin := filepath.Join(dest, "rtk.exe")
+		if !util.Exists(rtkBin) || !util.BinaryHealthy(rtkBin) {
+			util.L.Debug("rtk prebuilt binary failed probe; trying fallback installers")
 			return false
 		}
 		util.PrependProcessPath(dest)

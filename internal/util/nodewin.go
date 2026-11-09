@@ -95,6 +95,19 @@ func downloadToTemp(url string) (string, error) {
 	return f.Name(), nil
 }
 
+// DownloadAndExtractZip fetches a zip archive and unpacks it into dest.
+func DownloadAndExtractZip(url, dest string) error {
+	tmp, err := downloadToTemp(url)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp)
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return err
+	}
+	return extractZipFlat(tmp, dest)
+}
+
 // extractZipStripRoot unpacks zipPath into dest, dropping the archive's
 // single root directory (node-vX-win-x64/...) so binaries land in dest.
 func extractZipStripRoot(zipPath, dest string) error {

@@ -570,8 +570,8 @@ func diagnoseToolFailure(agentID, toolID string) string {
 		if toolID == "codegraph" && !agents.HasCopilotCodegraphIndexHook() {
 			return "index hook missing in ~/.copilot/hooks"
 		}
-		if toolID == "context-mode" && !agents.HasCopilotContextModeHook() {
-			return "context hook missing in ~/.copilot/hooks"
+		if toolID == "context-mode" && (agents.HasCopilotContextModeHook() || agents.HasCopilotIdeContextModeHook()) {
+			return "legacy context hook present"
 		}
 	}
 	if cfgPath != "" {

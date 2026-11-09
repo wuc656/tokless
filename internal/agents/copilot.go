@@ -818,7 +818,7 @@ func copilotMcpEqual(existing any, desired *util.OrderedMap) bool {
 	if util.CommandMatches(haveCmdStr, desCmdStr) && util.ArgsEqual(haveArgs, desArgsSlice) {
 		return true
 	}
-	return false
+	return util.McpEntryMatchesTool(desCmdStr, desCmdStr, desArgsSlice, em)
 }
 
 func jsonString(v any) string {

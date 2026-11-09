@@ -1,10 +1,14 @@
 package commands
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/core"
@@ -197,6 +201,40 @@ func detectAgents(allAgents []*core.AgentManifest) (map[string]bool, map[string]
 	return installedIDs, detectedSource
 }
 
+const errBinaryRemoved = "tokless executable was removed"
+
+// checkPersistedBinary runs the persisted tokless once so antivirus scans it
+// before any agent config is written; a removed binary then fails init up front.
+func checkPersistedBinary() error {
+	exe := util.ToklessPersistedAbs()
+	if exe == "" {
+		return errors.New("no stable tokless executable found; install tokless or put an absolute tokless binary on PATH")
+	}
+	if filepath.IsAbs(exe) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := exec.CommandContext(ctx, exe, "--version").Run(); err != nil {
+			if util.IsWin {
+				return fmt.Errorf("cannot run %s (%v); antivirus may have blocked or removed it", exe, err)
+			}
+			return fmt.Errorf("cannot run %s: %v", exe, err)
+		}
+	}
+	return nil
+}
+
+func toolStillWired(tool *core.ToolManifest, agentID string) bool {
+	verify, ok := tool.WiredAnyFor[agentID]
+	if !ok {
+		verify, ok = tool.VerifyFor[agentID]
+	}
+	if !ok {
+		return false
+	}
+	r := verify()
+	return r != nil && *r
+}
+
 func RunInit(opts InitOptions) int {
 	util.SetQuiet(!opts.Verbose)
 	if os.Getenv("TOKLESS_INSTALLER_RUN") == "1" {
@@ -205,10 +243,12 @@ func RunInit(opts InitOptions) int {
 		MaybeSelfUpdate(opts)
 		util.L.Raw("")
 	}
-	if !opts.DryRun && util.ToklessPersistedAbs() == "" {
-		util.SetQuiet(false)
-		util.L.Err("cannot wire agents: no stable tokless executable found; install tokless or put an absolute tokless binary on PATH")
-		return 1
+	if !opts.DryRun {
+		if err := checkPersistedBinary(); err != nil {
+			util.SetQuiet(false)
+			util.L.Err("cannot wire agents: " + err.Error())
+			return 1
+		}
 	}
 	CleanLegacyArtifacts(opts.DryRun)
 	var failures map[string][]string
@@ -457,6 +497,13 @@ func RunInit(opts InitOptions) int {
 		return 0
 	}
 
+	autostartBefore := !opts.DryRun && proxyAutostartConfigured()
+	binaryGone := false
+	persistedExe := util.ToklessPersistedAbs()
+	if !opts.DryRun && filepath.IsAbs(persistedExe) {
+		util.PinToklessPersisted(persistedExe)
+		defer util.PinToklessPersisted("")
+	}
 	wireBar := util.NewSectionProgress("Agents")
 	wireBar.Start(len(wireIDs))
 	for _, agentID := range wireIDs {
@@ -513,9 +560,17 @@ func RunInit(opts InitOptions) int {
 				} else if !opts.DryRun && !wasWired {
 					wireChanges = append(wireChanges, wireChange{tool: tool, agent: agentID})
 				}
+				if !opts.DryRun && filepath.IsAbs(persistedExe) && !util.Exists(persistedExe) {
+					binaryGone = true
+					break
+				}
 			}
 			return nil
 		})
+		if binaryGone {
+			wireBar.Fail("tokless executable removed")
+			break
+		}
 		if len(failed) == 0 {
 			wireBar.Complete("")
 		} else {
@@ -526,34 +581,51 @@ func RunInit(opts InitOptions) int {
 	}
 	wireBar.Done("")
 	util.SetQuiet(false)
-	if len(failures) > 0 && len(wireChanges) > 0 {
+	rollbackFailed := false
+	if (len(failures) > 0 || binaryGone) && len(wireChanges) > 0 {
 		for i := len(wireChanges) - 1; i >= 0; i-- {
 			change := wireChanges[i]
 			failedList, agentFailed := failures[change.agent]
-			if !agentFailed || !contains(failedList, change.tool.Label) || change.refused {
+			if change.refused || (binaryGone && change.tool.InstructionOnly) || (!binaryGone && (!agentFailed || !contains(failedList, change.tool.Label))) {
 				continue
 			}
 			if unwire, ok := change.tool.UnwireFor[change.agent]; ok {
 				removed, err := unwire(core.RunOpts{Agent: change.agent})
 				if err != nil {
+					rollbackFailed = true
 					treeSub("rollback failed: " + change.tool.Label + " from " + change.agent + ": " + err.Error())
-				} else if !removed {
-					stillWired := false
-					if verify, ok := change.tool.VerifyFor[change.agent]; ok {
-						if r := verify(); r != nil {
-							stillWired = *r
-						}
+				} else if (!removed || binaryGone) && toolStillWired(change.tool, change.agent) {
+					rollbackFailed = true
+					targetDesc := change.agent
+					if agent := core.GetAgent(change.agent); agent != nil {
+						targetDesc = agent.Label
 					}
-					if stillWired {
-						targetDesc := change.agent
-						if agent := core.GetAgent(change.agent); agent != nil {
-							targetDesc = agent.Label
-						}
-						treeSub("rollback failed: " + change.tool.Label + " from " + targetDesc + ": configuration was not removed (managed entry or hook still present in config)")
-					}
+					treeSub("rollback failed: " + change.tool.Label + " from " + targetDesc + ": configuration was not removed (managed entry or hook still present in config)")
 				}
 			}
 		}
+	}
+	if binaryGone {
+		if cursorRollback != nil {
+			cursorRollback()
+		}
+		if !autostartBefore && proxyAutostartConfigured() {
+			if err := disableProxyAutostart(); err != nil {
+				rollbackFailed = true
+				treeSub("rollback failed: login task: " + err.Error())
+			}
+		}
+		msg := errBinaryRemoved
+		if util.IsWin {
+			msg += " (antivirus may have quarantined it)"
+		}
+		msg += "; restore or reinstall tokless to make earlier hooks work"
+		if rollbackFailed {
+			util.L.Err("init aborted, rollback incomplete (see rollback failed lines above): " + msg)
+		} else {
+			util.L.Err("init aborted, changes rolled back: " + msg)
+		}
+		return 1
 	}
 	if len(failures) > 0 && cursorRollback != nil {
 		if cursorFails, ok := failures["cursor"]; ok && (contains(cursorFails, "project rules") || contains(cursorFails, "project rules hook")) {

@@ -3,12 +3,12 @@
 Apply on every coding task:
 
 **Tools (call):**
-- Code Index (codegraph) — MCP `codegraph_explore` for structure, flows, dependencies.
+- Code Index (codegraph) — `codegraph_explore` for structure, flows, dependencies.
 - Context Tools (context-mode) — `ctx_*` for large, uncertain, multi-source analysis.
 
 ## Code Index (codegraph)
 
-MCP tool `codegraph_explore` gives source, call path, and blast radius in one call.
+Tool `codegraph_explore` gives source, call path, and blast radius in one call.
 
 ### Rules
 

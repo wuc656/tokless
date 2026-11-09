@@ -5,9 +5,9 @@
 
   One tool, no config — works the moment it lands.
 
-  [![version](https://img.shields.io/github/v/release/wuc656/tokless?label=version)](https://github.com/wuc656/tokless/releases)
+  [![version](https://img.shields.io/github/v/release/wuc656/tokless?label=version&color=0969da)](https://github.com/wuc656/tokless/releases)
   [![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue)](https://github.com/wuc656/tokless)
-  [![license](https://img.shields.io/github/license/wuc656/tokless)](https://github.com/wuc656/tokless/blob/main/LICENSE)
+  [![license](https://img.shields.io/github/license/wuc656/tokless?color=2ea44f)](https://github.com/wuc656/tokless/blob/main/LICENSE)
 
   <br />
 
@@ -21,7 +21,7 @@
 
 <table>
   <tr><td>✅</td><td><b>Clear purpose</b> — best tool for each job, wired without conflict</td></tr>
-  <tr><td>✅</td><td><b>No overload</b> — minimal MCP tools with clear, unified instructions</td></tr>
+  <tr><td>✅</td><td><b>No overload</b> — minimal tools with clear, unified instructions</td></tr>
   <tr><td>✅</td><td><b>Zero config</b> — works as soon as installed, in under 30 seconds</td></tr>
   <tr><td>✅</td><td><b>One place</b> — install, update, and manage all tools across every configured harness</td></tr>
 </table>
@@ -98,14 +98,14 @@ https://raw.githubusercontent.com/wuc656/tokless/main/docs/installation.md
 | [codegraph](https://github.com/colbymchenry/codegraph) | ![](https://img.shields.io/github/stars/colbymchenry/codegraph?style=flat-square&label=) | Indexed code graph for source, call paths, and impact. |
 | [context-mode](https://github.com/mksglu/context-mode) | ![](https://img.shields.io/github/stars/mksglu/context-mode?style=flat-square&label=) | Sandboxed context tools with session memory and focused analysis. |
 
-### MCP tools
+### Tools
 
 Two tools run as MCP servers. Headroom and rtk wire through their own mechanisms (proxy, hooks, plugins) — no MCP needed.
 
 Upstream those two expose **12 tools**. Tokless spawns each server through a bounded proxy that filters its tool list, so **7 land in your context — 5 are trimmed automatically**, at install, nothing to configure.
 
 ```text
-MCP Tools
+Tools
 ├── CodeGraph · 1/1
 │   └── codegraph_explore
 └── Context Mode · 6/11

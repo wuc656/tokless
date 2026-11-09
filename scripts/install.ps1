@@ -28,12 +28,26 @@ if ($selfUpdate -and $selfUpdate -notmatch '^[1-9][0-9]*$') {
     Write-Host "Invalid self-update process ID: $selfUpdate" -ForegroundColor Red
     exit 1
 }
-try {
-    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-} catch {
-    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    Write-Host "Download failed ($asset): $($_.Exception.ToString())`n$($_ | Out-String)" -ForegroundColor Red
-    exit 1
+$maxAttempts = 3
+$downloaded = $false
+for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+    try {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -TimeoutSec 60
+        if (Test-Path -LiteralPath $tmp) {
+            $downloaded = $true
+            break
+        }
+    } catch {
+        if ($attempt -lt $maxAttempts) {
+            Write-Host "Download attempt $attempt failed ($($_.Exception.Message)), retrying in 3s..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 3
+        } else {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            Write-Host "Download failed ($asset): $($_.Exception.ToString())`n$($_ | Out-String)" -ForegroundColor Red
+            exit 1
+        }
+    }
 }
 if (-not (Test-Path -LiteralPath $tmp)) {
     Write-Host "Download finished but $tmp is missing; it may have been removed by Windows Defender or other antivirus software." -ForegroundColor Red

@@ -591,7 +591,10 @@ func ctxVerifyPi() bool {
 }
 
 func ctxVerifyCopilot() bool {
-	return agents.CopilotMcpBounded("context-mode", false) && agents.CopilotMcpBounded("context-mode", true) && !agents.HasCopilotContextModeHook() && !agents.HasCopilotIdeContextModeHook()
+	if agents.IdeInProject() {
+		return agents.CopilotMcpBounded("context-mode", false) && agents.CopilotMcpBounded("context-mode", true) && !agents.HasCopilotContextModeHook() && !agents.HasCopilotIdeContextModeHook()
+	}
+	return agents.CopilotMcpBounded("context-mode", false) && !agents.HasCopilotContextModeHook()
 }
 
 func ctxVerifyGrok() bool {

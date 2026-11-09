@@ -553,6 +553,24 @@ func TestCopilotDoctorWireUnwire(t *testing.T) {
 	if agents.CopilotMcpHas("codegraph") {
 		t.Fatal("codegraph MCP not removed")
 	}
+
+	// Test context-mode wire/verify when outside a project (not in a VS Code workspace)
+	agents.SetIdeProjectRoot(".")
+	if wire, ok := contextMode.WireFor["copilot"]; ok {
+		ran, err := wire(opts)
+		if err != nil {
+			t.Fatalf("context-mode wire outside project failed: %v", err)
+		}
+		if !ran {
+			t.Fatal("context-mode wire outside project returned false")
+		}
+	}
+	if verify, ok := contextMode.VerifyFor["copilot"]; ok {
+		r := verify()
+		if r == nil || !*r {
+			t.Fatal("context-mode should be verified as wired for Copilot even when outside a project")
+		}
+	}
 }
 
 func TestEnsureCopilotRtkCommandApproval(t *testing.T) {

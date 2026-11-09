@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	proxyReadyTimeout         = 15 * time.Second
+	proxyReadyTimeout         = 30 * time.Second
 	proxyStopTimeout          = 5 * time.Second
 	proxyProbeTimeout         = 2 * time.Second
 	proxyPollInterval         = 300 * time.Millisecond

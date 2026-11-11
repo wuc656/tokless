@@ -119,6 +119,109 @@ func RunRemove(opts InitOptions) int {
 	return runRemoveWith(defaultRemoveOps(), opts)
 }
 
+// CleanResetPurge cleans all background proxies, legacy artifacts, agent wiring,
+// installed tool packages, and data directories while preserving tokless itself.
+func CleanResetPurge(opts InitOptions) []string {
+	return cleanResetPurgeWith(defaultRemoveOps(), opts)
+}
+
+func cleanResetPurgeWith(ops removeOps, opts InitOptions) []string {
+	bar := util.NewSectionProgress("Fresh install reset")
+	bar.Start(5)
+
+	var failures []string
+
+	// Phase 1: Stop proxies and disable autostart
+	bar.Begin("Stopping background proxies & autostart")
+	if err := ops.stopProxy(); err != nil {
+		failures = append(failures, "proxy: "+err.Error())
+	}
+	if err := ops.stopBYOK(); err != nil {
+		failures = append(failures, "byok: "+err.Error())
+	}
+	if err := ops.stopCopilotProxy(); err != nil {
+		failures = append(failures, "copilot-proxy: "+err.Error())
+	}
+	if err := ops.stopGrokProxy(); err != nil {
+		failures = append(failures, "grok-proxy: "+err.Error())
+	}
+	if err := ops.disableAutostart(); err != nil {
+		failures = append(failures, "autostart: "+err.Error())
+	}
+	bar.Complete("")
+
+	// Phase 2: Clean legacy artifacts (projectmem, caveman, ponytail, principles)
+	bar.Begin("Cleaning legacy artifacts")
+	_, legacyErrs := CleanLegacyArtifacts(false)
+	for _, e := range legacyErrs {
+		failures = append(failures, "legacy: "+e.Error())
+	}
+	bar.Complete("")
+
+	// Phase 3: Unwire all agents (active tools + hooks + instructions + cursor rules)
+	bar.Begin("Unwiring agent configurations")
+	allTools := core.ListTools()
+	for _, agent := range core.ListAgents() {
+		for _, tool := range allTools {
+			if unwire, ok := tool.UnwireFor[agent.ID]; ok {
+				_, _ = unwire(core.RunOpts{Agent: agent.ID})
+			}
+		}
+	}
+	// Strip all instructions from all agents
+	for _, agent := range core.ListAgents() {
+		toolsPkg.RemoveOwner(agent.ID, "codegraph")
+		toolsPkg.RemoveOwner(agent.ID, "context-mode")
+		p := toolsPkg.InstructionPath(agent.ID)
+		if p != "" && util.Exists(p) {
+			raw, ok := util.ReadFileSafe(p)
+			if ok {
+				cleaned := toolsPkg.StripLegacyExported(raw)
+				if isOnlyToklessHeaderContent(cleaned) {
+					_ = os.Remove(p)
+				}
+			}
+		}
+	}
+	CleanAllLegacyInstructions()
+	// Clean Cursor rules and hooks
+	CleanWorkspaceCursorRules()
+	_ = agents.RemoveCursorProjectRulesHook()
+	_ = agents.RemoveCursorCodegraphIndexHook()
+	_ = agents.RemoveCursorRtkHook()
+	// Clean OpenCode plugins
+	agents.CleanOpenCodeLegacy()
+	// Clean Pi packages and skills
+	_ = agents.PiRemoveMcpAdapter()
+	agents.CleanPiLegacy()
+	// Deep sweep: purge any remaining Tokless MCP and hook configs
+	deepSweepAgentConfigs()
+	bar.Complete("")
+
+	// Phase 4: Purge tool binaries & npm packages
+	bar.Begin("Uninstalling tool binaries & packages")
+	if p := util.ResolveRtkBin(); p != "" && util.Exists(p) {
+		if err := ops.uninstallRtk(p); err != nil {
+			failures = append(failures, "rtk: "+err.Error())
+		}
+	}
+	if err := ops.uninstallNpm("@colbymchenry/codegraph", "context-mode", "projectmem"); err != nil {
+		failures = append(failures, "npm: "+err.Error())
+	}
+	bar.Complete("")
+
+	// Phase 5: Purge Tokless data, cache, and state (KEEP tokless binary!)
+	bar.Begin("Purging Tokless data & cache directories")
+	_ = ops.removeAll(util.HeadroomPathsResolved().Root)
+	_ = ops.removeAll(util.ToklessDataDir())
+	_ = ops.removeFile(util.InstallMarkerPath())
+	_ = ops.removeFile(util.SelectionPath())
+	bar.Complete("")
+	bar.Done("")
+
+	return failures
+}
+
 func runRemoveWith(ops removeOps, opts InitOptions) int {
 	util.L.Raw("")
 	util.L.Raw("  " + util.C.Bold(util.C.Cyan("tokless")) + util.C.Gray("  remove (complete uninstaller)"))

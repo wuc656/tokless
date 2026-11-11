@@ -28,6 +28,7 @@ type InitOptions struct {
 	Uninstall   bool
 	NoAutostart bool
 	Force       bool
+	Clean       bool
 }
 
 func contains(ss []string, s string) bool {
@@ -241,6 +242,12 @@ func RunInit(opts InitOptions) int {
 		opts.Upgrade = true
 	} else {
 		MaybeSelfUpdate(opts)
+		util.L.Raw("")
+	}
+	if opts.Clean && !opts.DryRun {
+		util.L.Raw("  " + util.C.Cyan(util.Sym.Info) + " " + util.C.Bold("Performing clean reset before install..."))
+		CleanResetPurge(opts)
+		opts.Upgrade = true
 		util.L.Raw("")
 	}
 	if !opts.DryRun {

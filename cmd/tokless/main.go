@@ -49,7 +49,7 @@ func isSessionBootArg(args []string) bool {
 
 // boolFlags never take a value, so a following word stays a positional.
 var boolFlags = map[string]bool{
-	"dry-run": true, "dryrun": true, "fix": true, "force": true, "help": true, "no-autostart": true,
+	"clean": true, "dry-run": true, "dryrun": true, "fix": true, "force": true, "fresh": true, "help": true, "no-autostart": true,
 	"offline": true, "uninstall": true, "verbose": true, "version": true, "yes": true, "y": true,
 }
 
@@ -96,6 +96,7 @@ func helpText() string {
 		"  " + cy("tokless remove") + "       Completely remove tokless, all tools, daemons, and data\n" +
 		"  " + cy("tokless proxy") + "        Manage the headroom HTTP proxy: up|down|status|autostart\n\n" +
 		util.C.Bold("Flags:") + "\n" +
+		"  --clean             Clean reset all tools, proxies, and caches before installing\n" +
 		"  --agents <list>     Limit to a subset: " + fitList(agentSubset, termWidth(), len("  --agents <list>     Limit to a subset: ")) + "\n" +
 		"  --tools <list>      Limit to a subset: " + fitList(toolSubset, termWidth(), len("  --tools <list>      Limit to a subset: ")) + "\n" +
 		"  --dry-run           Show what would change without writing anything\n" +
@@ -395,6 +396,7 @@ func run() int {
 		DryRun:  p.bools["dry-run"] || p.bools["dryrun"],
 		Verbose: p.bools["verbose"],
 		Force:   p.bools["force"],
+		Clean:   p.bools["clean"] || p.bools["fresh"],
 
 		NoAutostart: p.bools["no-autostart"],
 	}

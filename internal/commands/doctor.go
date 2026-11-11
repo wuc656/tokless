@@ -870,12 +870,12 @@ func doctorToolDependencies(tool *core.ToolManifest) []string {
 		}
 	}
 	if tool.Channel == core.ChannelUV {
-		if util.Which("python3") == "" {
+		if util.Which("python3") == "" && util.Which("python") == "" {
 			deps = append(deps, "Python missing")
 		} else {
 			deps = append(deps, "Python OK")
 		}
-		if util.Which("uv") == "" {
+		if util.Which("uv") == "" && !util.Exists(util.HeadroomPathsResolved().UV) {
 			deps = append(deps, "uv missing")
 		} else {
 			deps = append(deps, "uv OK")

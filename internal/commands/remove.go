@@ -35,7 +35,7 @@ func defaultRemoveOps() removeOps {
 			if isTest {
 				return nil
 			}
-			return headroompkg.StopProxy()
+			return headroompkg.PurgeStopProxy()
 		},
 		stopBYOK: func() error {
 			if isTest {

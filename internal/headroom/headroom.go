@@ -23,7 +23,7 @@ var runHeadroom = func(command string, args, env []string, ctx context.Context) 
 func headroomInstallArgs(upgrade bool) []string {
 	args := []string{"tool", "install"}
 	if upgrade {
-		args = append(args, "--upgrade")
+		args = append(args, "--upgrade", "--force")
 	}
 	return append(args, "--python", "3.13", headroomPackage)
 }

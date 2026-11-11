@@ -1194,6 +1194,24 @@ func StopProxy() error {
 	return err
 }
 
+// PurgeStopProxy forcefully stops any running headroom proxy and its supervisor
+// during uninstallation, ensuring no background process keeps locking files.
+func PurgeStopProxy() error {
+	err := StopProxy()
+	if err == nil && !ProxyRunning() {
+		return nil
+	}
+	// Fallback termination: query port 8787 /health to terminate the active process tree
+	if pid, ok := proxyServingPIDProbe(proxyProbeTimeout); ok && pid > 0 {
+		util.KillProcessTreePID(pid)
+	}
+	pidFile, _ := proxyFiles()
+	_ = clearProxyState(pidFile)
+	_ = clearProxyRuntime()
+	cleanupLegacyRouteState()
+	return nil
+}
+
 // clearProxyRuntime drops the persisted runtime after daemon resources are gone.
 func clearProxyRuntime() error { return util.ClearHeadroomProxyRuntime() }
 

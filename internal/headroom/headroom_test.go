@@ -21,7 +21,7 @@ func TestHeadroomInstallArgsAndNativeRisk(t *testing.T) {
 	if got, want := headroomInstallArgs(false), []string{"tool", "install", "--python", "3.13", "headroom-ai[proxy]"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("install args = %v, want %v", got, want)
 	}
-	if got, want := headroomInstallArgs(true), []string{"tool", "install", "--upgrade", "--python", "3.13", "headroom-ai[proxy]"}; !reflect.DeepEqual(got, want) {
+	if got, want := headroomInstallArgs(true), []string{"tool", "install", "--upgrade", "--force", "--python", "3.13", "headroom-ai[proxy]"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("upgrade args = %v, want %v", got, want)
 	}
 	if !headroomNativeBuildRiskFor("windows", "amd64") || !headroomNativeBuildRiskFor("darwin", "amd64") || headroomNativeBuildRiskFor("darwin", "arm64") || headroomNativeBuildRiskFor("linux", "amd64") {

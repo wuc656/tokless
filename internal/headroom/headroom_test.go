@@ -269,6 +269,12 @@ func TestHeadroomEnsureInstalledWhenProxyRunningSkipsUpgradeOnFileLock(t *testin
 	proxyLiveZProbe = func(time.Duration) bool { return true }
 	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 
+	oldRun := runHeadroom
+	t.Cleanup(func() { runHeadroom = oldRun })
+	runHeadroom = func(cmd string, args, env []string, ctx context.Context) util.ExecResult {
+		return util.ExecResult{Code: 0}
+	}
+
 	p := util.HeadroomPathsResolved()
 	_ = util.EnsureDir(filepath.Dir(p.UV))
 	_ = os.WriteFile(p.UV, []byte("uv"), 0o755)

@@ -131,23 +131,18 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		util.L.Sub("[dry-run] would install headroom-ai[proxy] with managed Python 3.13")
 		return true, nil
 	}
-	if util.HeadroomInstalled() && ProxyRunning() {
-		opts.Reportf("already running", 1)
-		return true, nil
-	}
-	opts.Reportf("uv bootstrap", 0.1)
-	uv, err := headroomUV()
-	if err != nil {
-		return false, err
-	}
-	if util.HeadroomInstalled() {
-		if !opts.Upgrade {
-			if err := headroomVersionProbe(); err != nil {
-				return false, err
-			}
-			opts.Reportf("already installed", 1)
+	if util.HeadroomInstalled() && !opts.Upgrade {
+		if ProxyRunning() {
+			opts.Reportf("already running", 1)
 			return true, nil
 		}
+		if err := headroomVersionProbe(); err != nil {
+			return false, err
+		}
+		opts.Reportf("already installed", 1)
+		return true, nil
+	}
+	if util.HeadroomInstalled() && opts.Upgrade {
 		if installedVer := util.HeadroomInstalledVersion(); installedVer != nil {
 			if latestVer := util.LatestVersionFor("headroom"); latestVer != nil && *installedVer == *latestVer {
 				if err := headroomVersionProbe(); err == nil {
@@ -158,6 +153,11 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 			}
 		}
 	}
+	opts.Reportf("uv bootstrap", 0.1)
+	uv, err := headroomUV()
+	if err != nil {
+		return false, err
+	}
 	opts.Reportf("managed Python", 0.3)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
@@ -165,13 +165,27 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		return false, headroomFailure("managed Python", result)
 	}
 	opts.Reportf("package install", 0.5)
+
+	// On Windows, running headroom.exe locks the binary on disk, causing upgrade to fail.
+	// Temporarily stop the proxy if running, perform the upgrade, then restart it.
+	wasRunning := opts.Upgrade && ProxyRunning()
+	if wasRunning {
+		_ = StopProxy()
+	}
+
 	result := runHeadroom(uv, headroomInstallArgs(opts.Upgrade), util.HeadroomEnv(), ctx)
 	if result.Code != 0 {
+		if wasRunning {
+			_ = StartProxy()
+		}
 		if util.HeadroomInstalled() && ProxyRunning() {
 			opts.Reportf("already running", 1)
 			return true, nil
 		}
 		return false, headroomFailure("package install", result)
+	}
+	if wasRunning {
+		_ = StartProxy()
 	}
 	if !util.HeadroomInstalled() {
 		return false, fmt.Errorf("headroom executable verification failed: %s", util.HeadroomBin())

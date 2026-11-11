@@ -476,7 +476,12 @@ func adoptCompatibleProxy(port int) bool {
 	if err != nil {
 		return false
 	}
-	if !identity.matches(ResolveHeadroomBin(), proxyArgs(port)) {
+	if !identity.matches(ResolveHeadroomBin(), proxyArgs(port)) &&
+		!identity.matchesRecordShape(proxyOwnership{
+			Executable: ResolveHeadroomBin(),
+			Args:       proxyArgs(port),
+			Start:      identity.Start,
+		}) {
 		return false
 	}
 	allowed := headroomAllowedBaseURLs()

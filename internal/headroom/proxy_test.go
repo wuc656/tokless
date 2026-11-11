@@ -1885,6 +1885,38 @@ func TestAdoptCompatibleProxyRecordsObservedAllowlist(t *testing.T) {
 	}
 }
 
+func TestAdoptCompatibleProxyMatchesWrappedPythonLauncher(t *testing.T) {
+	isolateProxyOps(t)
+	util.SetHomeOverride(t.TempDir())
+	bin := util.HeadroomBin()
+	if err := os.MkdirAll(filepath.Dir(bin), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldServing, oldIdentity, oldEnv := proxyServingPIDProbe, proxyIdentity, proxyProcessEnv
+	t.Cleanup(func() {
+		proxyServingPIDProbe, proxyIdentity, proxyProcessEnv = oldServing, oldIdentity, oldEnv
+	})
+	proxyServingPIDProbe = func(timeout time.Duration) (int, bool) { return 4243, true }
+	// Simulate python.exe running the headroom CLI with headroom.exe as first argument
+	pythonExe := filepath.Join(filepath.Dir(bin), "python.exe")
+	if err := os.WriteFile(pythonExe, []byte("python"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proxyIdentity = func(pid int) (processIdentityInfo, error) {
+		return processIdentityInfo{
+			Executable: pythonExe,
+			Args:       append([]string{bin}, proxyArgs(ProxyPort())...),
+			Start:      "Mon Jan  1 00:00:00 2026",
+		}, nil
+	}
+	if !adoptCompatibleProxy(ProxyPort()) {
+		t.Fatal("adoptCompatibleProxy() = false, want true for python-wrapped launcher")
+	}
+}
+
 func TestStopHeadroomDaemonRefusesUnownedLiveProxy(t *testing.T) {
 	isolateProxyOps(t)
 	util.SetHomeOverride(t.TempDir())

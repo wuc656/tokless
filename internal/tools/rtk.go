@@ -347,20 +347,20 @@ func kiloRtkWire(opts core.RunOpts) (bool, error) {
 	backup := ""
 	if raw, ok := util.ReadFileSafe(path); ok && !strings.Contains(raw, kiloRtkMarker) {
 		backup = kiloForeignBackupPath(path)
-		if err := os.Rename(path, backup); err != nil {
+		if err := util.ReplaceFile(path, backup); err != nil {
 			return false, nil
 		}
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	if err := util.ReplaceFile(tmpPath, path); err != nil {
 		if backup != "" {
-			_ = os.Rename(backup, path)
+			_ = util.ReplaceFile(backup, path)
 		}
 		return false, nil
 	}
 	if !kiloRtkVerify() {
 		_ = os.Remove(path)
 		if backup != "" {
-			_ = os.Rename(backup, path)
+			_ = util.ReplaceFile(backup, path)
 		}
 		return false, nil
 	}
@@ -445,14 +445,8 @@ func clineRtkWire(opts core.RunOpts) (bool, error) {
 		return false, nil
 	}
 
-	if err := os.Rename(tmpPath, hookPath); err != nil {
-		if util.IsWin {
-			_ = os.Remove(hookPath)
-			err = os.Rename(tmpPath, hookPath)
-		}
-		if err != nil {
-			return false, nil
-		}
+	if err := util.ReplaceFile(tmpPath, hookPath); err != nil {
+		return false, nil
 	}
 	if !clineRtkVerify() {
 		_ = os.Remove(hookPath)

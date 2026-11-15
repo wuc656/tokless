@@ -298,7 +298,7 @@ func clineWriteFileGuarded(path, content, expectedRaw string, expectedExists boo
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return replaceKiloFile(tmpPath, path)
+	return util.ReplaceFile(tmpPath, path)
 }
 
 func clineMcpMap(cfg *util.OrderedMap) (*util.OrderedMap, error) {

@@ -375,7 +375,7 @@ func writeKiloFileGuarded(path, content, expectedRaw string, expectedExists bool
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return replaceKiloFile(tmpPath, path)
+	return util.ReplaceFile(tmpPath, path)
 }
 
 func kiloMcpMap(cfg *util.OrderedMap) (*util.OrderedMap, error) {

@@ -17,6 +17,11 @@ var (
 	moveFileExProc  = replaceKernel32.NewProc("MoveFileExW")
 )
 
+// ReplaceFile replaces path with tmpPath atomically and safely across OSes.
+func ReplaceFile(tmpPath, path string) error {
+	return replaceFile(tmpPath, path)
+}
+
 func replaceFile(tmpPath, path string) error {
 	from, err := syscall.UTF16PtrFromString(tmpPath)
 	if err != nil {

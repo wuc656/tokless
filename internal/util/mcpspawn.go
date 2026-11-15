@@ -158,6 +158,7 @@ func codegraphMcpToolsHealthyMode(command string, prefixArgs []string, framed bo
 	defer cancel()
 	args := append(append([]string{}, prefixArgs...), "serve", "--mcp")
 	cmd := exec.CommandContext(ctx, command, args...)
+	PrepareSysProcAttr(cmd, true)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return false

@@ -1074,7 +1074,9 @@ var openCodeVersionPattern = regexp.MustCompile(`(?:^|\s)v?(\d+)\.`)
 
 // OpenCodeMajorVersion returns the major version reported by <bin> --version.
 func OpenCodeMajorVersion(bin string) int {
-	out, err := exec.Command(bin, "--version").Output()
+	vc := exec.Command(bin, "--version")
+	util.PrepareSysProcAttr(vc, true)
+	out, err := vc.Output()
 	if err != nil {
 		return 0
 	}

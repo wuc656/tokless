@@ -118,13 +118,13 @@ func autostartGuiBinary(bin string) string {
 }
 
 var queryScheduledTaskState = func() ([]byte, error) {
-	return exec.Command("schtasks", "/query", "/tn", proxyAutostartTask, "/fo", "CSV", "/nh").CombinedOutput()
+	return schtasksCmd("/query", "/tn", proxyAutostartTask, "/fo", "CSV", "/nh").CombinedOutput()
 }
 
 func scheduledTaskRunning() (bool, error) {
 	out, err := queryScheduledTaskState()
 	if err != nil {
-		if scheduledTaskNotFound(out) {
+		if scheduledTaskNotFound(out) || scheduledTaskAbsent() {
 			return false, nil
 		}
 		return false, err
@@ -156,7 +156,7 @@ func scheduledTaskRunning() (bool, error) {
 // runSchtasks runs schtasks and, on failure, includes its output in the error
 // so users see why (e.g. "Access is denied") instead of a bare exit status.
 func runSchtasks(args ...string) error {
-	out, err := exec.Command("schtasks", args...).CombinedOutput()
+	out, err := schtasksCmd(args...).CombinedOutput()
 	if err != nil {
 		if msg := strings.TrimSpace(string(out)); msg != "" {
 			return fmt.Errorf("schtasks %s: %s: %w", args[0], msg, err)
@@ -167,11 +167,11 @@ func runSchtasks(args ...string) error {
 }
 
 var readScheduledTask = func() ([]byte, error) {
-	return exec.Command("schtasks", "/query", "/tn", proxyAutostartTask, "/xml").CombinedOutput()
+	return schtasksCmd("/query", "/tn", proxyAutostartTask, "/xml").CombinedOutput()
 }
 
 var listScheduledTasks = func() ([]byte, error) {
-	return exec.Command("schtasks", "/query", "/fo", "CSV", "/nh").Output()
+	return schtasksCmd("/query", "/fo", "CSV", "/nh").Output()
 }
 
 // scheduledTaskAbsent is a locale-independent missing-task check: the full
@@ -199,6 +199,13 @@ var scheduledTaskAbsent = func() bool {
 	return true
 }
 
+// schtasksCmd builds a schtasks command with a hidden console window.
+func schtasksCmd(args ...string) *exec.Cmd {
+	c := exec.Command("schtasks", args...)
+	util.PrepareSysProcAttr(c, true)
+	return c
+}
+
 func scheduledTaskNotFound(output []byte) bool {
 	s := strings.ToLower(string(output))
 	return strings.Contains(s, "cannot find") ||
@@ -207,7 +214,7 @@ func scheduledTaskNotFound(output []byte) bool {
 }
 
 var endProxyAutostartTask = func() error {
-	out, err := exec.Command("schtasks", "/end", "/tn", proxyAutostartTask).CombinedOutput()
+	out, err := schtasksCmd("/end", "/tn", proxyAutostartTask).CombinedOutput()
 	if err != nil && (scheduledTaskNotFound(out) || scheduledTaskAbsent()) {
 		return nil
 	}
@@ -215,7 +222,7 @@ var endProxyAutostartTask = func() error {
 }
 
 var deleteProxyAutostartTask = func() error {
-	out, err := exec.Command("schtasks", "/delete", "/tn", proxyAutostartTask, "/f").CombinedOutput()
+	out, err := schtasksCmd("/delete", "/tn", proxyAutostartTask, "/f").CombinedOutput()
 	if err != nil && (scheduledTaskNotFound(out) || scheduledTaskAbsent()) {
 		return nil
 	}
@@ -252,7 +259,7 @@ func enableProxyAutostartOS() (err error) {
 		if scheduledTaskEnabled(task) && proxyHealthy(running) {
 			return nil
 		}
-	} else if queryErr != nil && !scheduledTaskNotFound(task) {
+	} else if queryErr != nil && !scheduledTaskNotFound(task) && !scheduledTaskAbsent() {
 		return fmt.Errorf("query %s: %w", proxyAutostartTask, queryErr)
 	}
 	var oldTask []byte
@@ -267,7 +274,7 @@ func enableProxyAutostartOS() (err error) {
 		if stateErr != nil {
 			return fmt.Errorf("query state of %s: %w", proxyAutostartTask, stateErr)
 		}
-	} else if !scheduledTaskNotFound(out) {
+	} else if !scheduledTaskNotFound(out) && !scheduledTaskAbsent() {
 		return fmt.Errorf("query %s: %w", proxyAutostartTask, queryErr)
 	}
 	proxyWasRunning := ProxyRunning() && (proxyArgsMatchRecorded(proxyPortFromRuntime()) || proxySupervisedArgsMatch(proxyPortFromRuntime()))

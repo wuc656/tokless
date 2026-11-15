@@ -18,6 +18,7 @@ var ensureUVTimeout = 3 * time.Minute
 // uvInstallCmd runs the official uv standalone installer.
 var uvInstallCmd = func(ctx context.Context, name string, args []string) error {
 	c := exec.CommandContext(ctx, name, args...)
+	PrepareSysProcAttr(c, true)
 	c.Env = os.Environ() // inherit proxies for corporate networks
 	out, err := c.CombinedOutput()
 	if err != nil {

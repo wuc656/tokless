@@ -301,7 +301,9 @@ func runDoctorCommand(binary string, args ...string) (string, error) {
 func runDoctorCommandTimeout(d time.Duration, binary string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), d)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, binary, args...).Output()
+	sc := exec.CommandContext(ctx, binary, args...)
+	util.PrepareSysProcAttr(sc, true)
+	out, err := sc.Output()
 	return strings.TrimSpace(string(out)), err
 }
 

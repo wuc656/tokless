@@ -161,6 +161,7 @@ func npmViewFields(spec string, fields ...string) map[string]string {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	c := exec.CommandContext(ctx, npmBin, append([]string{"info", spec}, append(fields, "--json")...)...)
+	PrepareSysProcAttr(c, true)
 	c.Env = append(os.Environ(), "NPM_CONFIG_PREFER_OFFLINE=false", "NPM_CONFIG_PREFER_ONLINE=true")
 	var out bytes.Buffer
 	c.Stdout = &out

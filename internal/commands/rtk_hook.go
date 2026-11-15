@@ -124,6 +124,7 @@ func rtkRewrite(cmdLine string) (string, bool) {
 		return "", false
 	}
 	cmd := exec.Command(rtkPath, "rewrite", cmdLine)
+	util.PrepareSysProcAttr(cmd, true)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = io.Discard

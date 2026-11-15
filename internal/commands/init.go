@@ -214,7 +214,9 @@ func checkPersistedBinary() error {
 	if filepath.IsAbs(exe) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := exec.CommandContext(ctx, exe, "--version").Run(); err != nil {
+		vc := exec.CommandContext(ctx, exe, "--version")
+		util.PrepareSysProcAttr(vc, true)
+		if err := vc.Run(); err != nil {
 			if util.IsWin {
 				return fmt.Errorf("cannot run %s (%v); antivirus may have blocked or removed it", exe, err)
 			}

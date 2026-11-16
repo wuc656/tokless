@@ -54,10 +54,22 @@ func claudeMcpBounded(toolID string) bool {
 			spawn := util.McpSpawnForAgent("claude", toolID)
 			cmd, _ := em.Get("command")
 			args, _ := em.Get("args")
-			return cmd == spawn.Command && util.ArgsEqual(args, spawn.Args)
+			if cmd == spawn.Command && util.ArgsEqual(args, spawn.Args) {
+				return true
+			}
+			list, _ := args.([]any)
+			strs := make([]string, len(list))
+			for i, a := range list {
+				strs[i], _ = a.(string)
+			}
+			return cmd == spawn.Command && agents.ClaudeMcpOwned(toolID, em) && util.ContextModeFlagsCurrent("claude", strs)
 		}
 	}
 	return false
+}
+
+func mcpStrArrEq(v any, want []string) bool {
+	return util.ArgsEqual(v, want)
 }
 
 func openCodeV2PluginsDirIsSeparate() bool {

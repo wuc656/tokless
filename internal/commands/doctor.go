@@ -669,14 +669,20 @@ func doctorAgentRows(r agentReport) []string {
 		if passed == nil || !*passed {
 			detail = diagnoseToolFailure(r.id, tool.ID)
 		}
+		note := ""
+		if r.id == "claude" && (passed == nil || !*passed) && tool.ID == "context-mode" {
+			if reason := agents.ClaudeMcpRefusal(tool.ID); reason != "" {
+				note = util.C.Dim(" — " + reason)
+			}
+		}
 		if cfgPath, key := toolConfigLocation(r.id, tool.ID); cfgPath != "" && key != "" {
-			rowStr := mark + " " + tool.Label + " → " + util.C.Gray(tildePath(cfgPath)) + util.C.Dim(" ("+key+")")
+			rowStr := mark + " " + tool.Label + " → " + util.C.Gray(tildePath(cfgPath)) + util.C.Dim(" ("+key+")") + note
 			if detail != "" {
 				rowStr += " " + util.C.Yellow("["+detail+"]")
 			}
 			rows = append(rows, rowStr)
 		} else {
-			rowStr := mark + " " + tool.Label + " → " + util.C.Dim("configuration location unknown")
+			rowStr := mark + " " + tool.Label + " → " + util.C.Dim("configuration location unknown") + note
 			if detail != "" {
 				rowStr += " " + util.C.Yellow("["+detail+"]")
 			}

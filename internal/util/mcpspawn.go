@@ -26,6 +26,30 @@ var pkgForBin = map[string]string{
 	"codegraph":    "@colbymchenry/codegraph",
 }
 
+// whichNpmGlobal finds bin on PATH, else in the npm global bin dir (custom prefix not on PATH).
+// It never edits PATH: the spawn uses the absolute path, and PATH changes would skew later lookups.
+func whichNpmGlobal(bin string) string {
+	if p := Which(bin); p != "" {
+		return p
+	}
+	prefix := npmPrefix()
+	if prefix == "" {
+		return ""
+	}
+	names := []string{bin}
+	if IsWin {
+		names = []string{bin + ".exe", bin + ".cmd", bin + ".bat", bin}
+	}
+	dir := npmGlobalBinDir(prefix, IsWin)
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p
+		}
+	}
+	return ""
+}
+
 // PickMcpSpawn prefers a real binary on PATH, else falls back to npx --no-install.
 func PickMcpSpawn(bin string, extraArgs ...string) McpSpawn {
 	if extraArgs == nil {
@@ -36,7 +60,7 @@ func PickMcpSpawn(bin string, extraArgs ...string) McpSpawn {
 		if spawn, ok := PickCodegraphSpawn(extraArgs...); ok {
 			return spawn
 		}
-	} else if p := Which(bin); p != "" {
+	} else if p := whichNpmGlobal(bin); p != "" {
 		spawn = wrapCmdShim(McpSpawn{Command: spawnCommand(bin, p), Args: extraArgs})
 		if bin == "context-mode" {
 			return WrapContextMode(spawn)

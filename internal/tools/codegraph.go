@@ -310,6 +310,7 @@ func codegraphWire(agent string) core.AgentFn {
 		}
 		if agent == "antigravity" {
 			if opts.DryRun {
+				antigravityDryRunMcp("codegraph")
 				return true, nil
 			}
 			if !codegraphConfigureMcp(agent) {
@@ -319,6 +320,9 @@ func codegraphWire(agent string) core.AgentFn {
 			agents.InstallAntigravityCodegraphIndexHook()
 			agents.CleanupDeadIdeHooks()
 			return codegraphVerify(agent), nil
+		}
+		if opts.DryRun {
+			return true, nil
 		}
 		if isTest() {
 			if agent == "copilot" {
@@ -345,9 +349,6 @@ func codegraphWire(agent string) core.AgentFn {
 				agents.InstallDroidCodegraphIndexHook()
 			}
 			return codegraphVerify(agent), nil
-		}
-		if opts.DryRun {
-			return true, nil
 		}
 		if agent == "opencode2" {
 			if !codegraphConfigureMcp(agent) {

@@ -121,6 +121,74 @@ var queryScheduledTaskState = func() ([]byte, error) {
 	return schtasksCmd("/query", "/tn", proxyAutostartTask, "/fo", "CSV", "/nh").CombinedOutput()
 }
 
+var queryScheduledTaskStatePowerShell = func() (string, error) {
+	if util.IsRunningInTest() {
+		return "", errors.New("powershell fallback disabled in tests")
+	}
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", "(Get-ScheduledTask -TaskName '"+proxyAutostartTask+"' -ErrorAction SilentlyContinue).State.ToString()")
+	util.PrepareSysProcAttr(cmd, true)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func parseLocalizedTaskState(rawState string) (running bool, recognized bool) {
+	lower := strings.ToLower(strings.TrimSpace(rawState))
+	switch {
+	case lower == "running" ||
+		strings.Contains(lower, "running") ||
+		strings.Contains(rawState, "執行") ||
+		strings.Contains(rawState, "运行") ||
+		strings.Contains(rawState, "実行") ||
+		strings.Contains(lower, "ausgeführt") ||
+		strings.Contains(lower, "cours d'exécution") ||
+		strings.Contains(lower, "en cours") ||
+		strings.Contains(lower, "ejecución") ||
+		strings.Contains(lower, "execução") ||
+		strings.Contains(lower, "executando") ||
+		strings.Contains(lower, "esecuzione") ||
+		strings.Contains(lower, "выполняется") ||
+		strings.Contains(lower, "работает") ||
+		strings.Contains(rawState, "실행") ||
+		strings.Contains(rawState, "\xb0\xf5\xa6\xe6\xa4\xa4") ||
+		strings.Contains(rawState, "\xd4\xcb\xd0\xd0"):
+		return true, true
+
+	case lower == "ready" || lower == "queued" || lower == "disabled" ||
+		strings.Contains(lower, "ready") ||
+		strings.Contains(lower, "queued") ||
+		strings.Contains(lower, "disabled") ||
+		strings.Contains(rawState, "就緒") ||
+		strings.Contains(rawState, "就绪") ||
+		strings.Contains(rawState, "已停用") ||
+		strings.Contains(rawState, "已禁用") ||
+		strings.Contains(rawState, "已排入") ||
+		strings.Contains(rawState, "準備") ||
+		strings.Contains(rawState, "無効") ||
+		strings.Contains(rawState, "待機") ||
+		strings.Contains(lower, "bereit") ||
+		strings.Contains(lower, "deaktiviert") ||
+		strings.Contains(lower, "prêt") ||
+		strings.Contains(lower, "désactivé") ||
+		strings.Contains(lower, "listo") ||
+		strings.Contains(lower, "deshabilitado") ||
+		strings.Contains(lower, "pronto") ||
+		strings.Contains(lower, "desativado") ||
+		strings.Contains(lower, "disabilitato") ||
+		strings.Contains(lower, "готов") ||
+		strings.Contains(lower, "отключено") ||
+		strings.Contains(rawState, "준비") ||
+		strings.Contains(rawState, "\xb4\x4e\xba\xfc") ||
+		strings.Contains(rawState, "\xbe\xcd\xd0\xf7"):
+		return false, true
+
+	default:
+		return false, false
+	}
+}
+
 func scheduledTaskRunning() (bool, error) {
 	out, err := queryScheduledTaskState()
 	if err != nil {
@@ -137,20 +205,23 @@ func scheduledTaskRunning() (bool, error) {
 		return false, err
 	}
 	rawState := records[0][len(records[0])-1]
-	lower := strings.ToLower(strings.TrimSpace(rawState))
-	switch {
-	case lower == "running" || strings.Contains(rawState, "執行") || strings.Contains(rawState, "运行") ||
-		strings.Contains(rawState, "\xb0\xf5\xa6\xe6\xa4\xa4") || strings.Contains(rawState, "\xd4\xcb\xd0\xd0"):
-		return true, nil
-	case lower == "ready" || lower == "queued" || lower == "disabled" ||
-		strings.Contains(rawState, "就緒") || strings.Contains(rawState, "就绪") ||
-		strings.Contains(rawState, "\xb4\x4e\xba\xfc") || strings.Contains(rawState, "\xbe\xcd\xd0\xf7") ||
-		strings.Contains(rawState, "已停用") || strings.Contains(rawState, "已禁用") ||
-		strings.Contains(rawState, "已排入"):
-		return false, nil
-	default:
-		return false, fmt.Errorf("unexpected task state %q", rawState)
+	if running, ok := parseLocalizedTaskState(rawState); ok {
+		return running, nil
 	}
+
+	// Fallback for rare or unrecognized locales: query PowerShell for the invariant TaskStateEnum string.
+	if psState, psErr := queryScheduledTaskStatePowerShell(); psErr == nil && psState != "" {
+		psLower := strings.ToLower(strings.TrimSpace(psState))
+		if psLower == "running" || psLower == "4" {
+			return true, nil
+		}
+		if psLower == "ready" || psLower == "disabled" || psLower == "queued" ||
+			psLower == "1" || psLower == "2" || psLower == "3" {
+			return false, nil
+		}
+	}
+
+	return false, fmt.Errorf("unexpected task state %q", rawState)
 }
 
 // runSchtasks runs schtasks and, on failure, includes its output in the error

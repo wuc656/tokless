@@ -97,6 +97,84 @@ func TestScheduledTaskRunningPropagatesStateErrors(t *testing.T) {
 	}
 }
 
+func TestScheduledTaskRunningMultilingual(t *testing.T) {
+	oldQuery := queryScheduledTaskState
+	t.Cleanup(func() { queryScheduledTaskState = oldQuery })
+
+	cases := []struct {
+		locale string
+		state  string
+		want   bool
+	}{
+		// English
+		{"en-running", "Running", true},
+		{"en-ready", "Ready", false},
+		{"en-disabled", "Disabled", false},
+		// German
+		{"de-running", "Wird ausgeführt", true},
+		{"de-ready", "Bereit", false},
+		// French
+		{"fr-running", "En cours d'exécution", true},
+		{"fr-ready", "Prêt", false},
+		// Japanese
+		{"ja-running", "実行中", true},
+		{"ja-ready", "準備完了", false},
+		// Spanish
+		{"es-running", "En ejecución", true},
+		{"es-ready", "Listo", false},
+		// Russian
+		{"ru-running", "Работает", true},
+		{"ru-ready", "Готов", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.locale, func(t *testing.T) {
+			queryScheduledTaskState = func() ([]byte, error) {
+				return []byte(`"\\tokless-headroom-proxy","N/A","` + tc.state + `"`), nil
+			}
+			got, err := scheduledTaskRunning()
+			if err != nil {
+				t.Fatalf("unexpected error for %s (%s): %v", tc.locale, tc.state, err)
+			}
+			if got != tc.want {
+				t.Fatalf("scheduledTaskRunning() for %s (%s) = %v, want %v", tc.locale, tc.state, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestScheduledTaskRunningPowerShellFallback(t *testing.T) {
+	oldQuery := queryScheduledTaskState
+	oldPS := queryScheduledTaskStatePowerShell
+	t.Cleanup(func() {
+		queryScheduledTaskState = oldQuery
+		queryScheduledTaskStatePowerShell = oldPS
+	})
+
+	queryScheduledTaskState = func() ([]byte, error) {
+		// Custom unrecognized state string
+		return []byte(`"\\tokless-headroom-proxy","N/A","CustomExoticState"`), nil
+	}
+
+	// PowerShell returns Running
+	queryScheduledTaskStatePowerShell = func() (string, error) {
+		return "Running", nil
+	}
+	running, err := scheduledTaskRunning()
+	if err != nil || !running {
+		t.Fatalf("expected running=true, err=nil; got running=%v, err=%v", running, err)
+	}
+
+	// PowerShell returns Ready
+	queryScheduledTaskStatePowerShell = func() (string, error) {
+		return "Ready", nil
+	}
+	running, err = scheduledTaskRunning()
+	if err != nil || running {
+		t.Fatalf("expected running=false, err=nil; got running=%v, err=%v", running, err)
+	}
+}
+
 func TestScheduledTaskAbsentParsesListing(t *testing.T) {
 	oldList := listScheduledTasks
 	t.Cleanup(func() { listScheduledTasks = oldList })

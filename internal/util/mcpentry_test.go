@@ -48,6 +48,45 @@ func TestIsToklessOrToolMcpEntry(t *testing.T) {
 		t.Errorf("expected IsToklessOrToolMcpEntry to be true for upstream context-mode")
 	}
 
+	// Bare codegraph tool command
+	bare := NewOrderedMap()
+	bare.Set("command", "codegraph")
+	bare.Set("args", []any{"serve", "--mcp"})
+	if !IsToklessOrToolMcpEntry("codegraph", bare) {
+		t.Errorf("expected IsToklessOrToolMcpEntry to be true for bare codegraph serve --mcp")
+	}
+
+	// cmd.exe wrapper to codegraph.cmd
+	cmdWrapper := NewOrderedMap()
+	cmdWrapper.Set("command", "cmd.exe")
+	cmdWrapper.Set("args", []any{"/c", "C:\\bin\\codegraph.cmd", "serve", "--mcp"})
+	if !IsToklessOrToolMcpEntry("codegraph", cmdWrapper) {
+		t.Errorf("expected IsToklessOrToolMcpEntry to be true for cmd.exe wrapper")
+	}
+
+	// npx wrapper
+	npxWrapper := NewOrderedMap()
+	npxWrapper.Set("command", "npx")
+	npxWrapper.Set("args", []any{"--no-install", "@colbymchenry/codegraph", "serve", "--mcp"})
+	if !IsToklessOrToolMcpEntry("codegraph", npxWrapper) {
+		t.Errorf("expected IsToklessOrToolMcpEntry to be true for npx wrapper")
+	}
+
+	// Foreign wrapper tools with "codegraph" in args must be refused
+	foreignWrapper := NewOrderedMap()
+	foreignWrapper.Set("command", "my-wrapper")
+	foreignWrapper.Set("args", []any{"codegraph", "serve", "--mcp"})
+	if IsToklessOrToolMcpEntry("codegraph", foreignWrapper) {
+		t.Errorf("expected IsToklessOrToolMcpEntry to be false for arbitrary foreign wrapper tool")
+	}
+
+	pythonWrapper := NewOrderedMap()
+	pythonWrapper.Set("command", "python")
+	pythonWrapper.Set("args", []any{"run_codegraph.py"})
+	if IsToklessOrToolMcpEntry("codegraph", pythonWrapper) {
+		t.Errorf("expected IsToklessOrToolMcpEntry to be false for python script")
+	}
+
 	unrelated := NewOrderedMap()
 	unrelated.Set("command", "github-copilot-server")
 	unrelated.Set("args", []any{})

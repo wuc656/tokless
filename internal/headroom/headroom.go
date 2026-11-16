@@ -138,6 +138,11 @@ func headroomVersionProbe() error {
 	return nil
 }
 
+var (
+	stopProxyFunc  = StopProxy
+	startProxyFunc = StartProxy
+)
+
 func EnsureInstalled(opts core.RunOpts) (bool, error) {
 	if os.Getenv("TOKLESS_TEST") == "1" {
 		return true, nil
@@ -185,7 +190,9 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 	// Temporarily stop the proxy if running, perform the upgrade, then restart it.
 	wasRunning := opts.Upgrade && ProxyRunning()
 	if wasRunning {
-		_ = StopProxy()
+		if stopErr := stopProxyFunc(); stopErr != nil {
+			util.L.Warn("headroom upgrade: failed to stop running proxy: " + stopErr.Error())
+		}
 	}
 
 	result := runHeadroom(uv, headroomInstallArgs(opts.Upgrade), util.HeadroomEnv(), ctx)
@@ -200,7 +207,9 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		defer retryCancel()
 		if retry := runHeadroom(uv, headroomInstallArgs(opts.Upgrade, "--no-build"), util.HeadroomEnv(), retryCtx); retry.Code != 0 {
 			if wasRunning {
-				_ = StartProxy()
+				if startErr := startProxyFunc(); startErr != nil {
+					util.L.Warn("headroom upgrade: failed to restart proxy after install failure: " + startErr.Error())
+				}
 			}
 			if util.HeadroomInstalled() && ProxyRunning() {
 				opts.Reportf("already running", 1)
@@ -211,7 +220,10 @@ func EnsureInstalled(opts core.RunOpts) (bool, error) {
 		util.L.Sub("headroom installed from prebuilt wheels only; some dependencies may be older than the latest releases")
 	}
 	if wasRunning {
-		_ = StartProxy()
+		if startErr := startProxyFunc(); startErr != nil {
+			util.L.Warn("headroom upgrade: failed to restart proxy: " + startErr.Error())
+			return false, fmt.Errorf("headroom upgraded but failed to restart proxy: %w", startErr)
+		}
 	}
 	if !util.HeadroomInstalled() {
 		return false, fmt.Errorf("headroom executable verification failed: %s", util.HeadroomBin())

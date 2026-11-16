@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/HoangP8/tokless/internal/util"
 )
 
 func TestAllowClaudeMcpToolProjectLocalPreservesAndAppends(t *testing.T) {
@@ -82,5 +84,42 @@ func TestAllowClaudeMcpToolProjectLocalCreatesFile(t *testing.T) {
 	got := string(raw)
 	if !strings.Contains(got, "mcp__codegraph__.*") || !strings.Contains(got, "mcp__codegraph__codegraph_explore") {
 		t.Fatalf("missing codegraph permissions in %s", got)
+	}
+}
+
+func TestConfigureClaudeMcp_RefusesForeignEntry(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+
+	p := util.ClaudeCodePaths()
+	if err := os.MkdirAll(p.Dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	foreignJSON := `{
+  "mcpServers": {
+    "context-mode": {
+      "type": "stdio",
+      "command": "my-wrapper",
+      "args": ["context-mode"]
+    }
+  }
+}`
+	if err := os.WriteFile(p.GlobalJSON, []byte(foreignJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	changed, file := ConfigureClaudeMcp("context-mode")
+	if changed {
+		t.Fatalf("expected ConfigureClaudeMcp to return changed=false for foreign entry, got changed=true (file=%s)", file)
+	}
+
+	raw, err := os.ReadFile(p.GlobalJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "my-wrapper") {
+		t.Fatalf("foreign entry was modified: %s", string(raw))
 	}
 }

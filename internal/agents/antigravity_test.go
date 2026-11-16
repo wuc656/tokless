@@ -86,6 +86,42 @@ func TestConfigureAntigravityMcp_ProtectForeignEntry(t *testing.T) {
 	}
 }
 
+func TestConfigureAntigravityMcp_RefusesArbitraryWrapper(t *testing.T) {
+	withMcpTest(t)
+	wrapperEntry := `{
+  "mcpServers": {
+    "codegraph": {
+      "command": "my-wrapper",
+      "args": ["codegraph", "serve", "--mcp"]
+    }
+  }
+}`
+	for _, f := range antigravityMcpConfigFiles() {
+		if err := util.EnsureDir(filepath.Dir(f)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, []byte(wrapperEntry), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	changed, _ := ConfigureAntigravityMcp("codegraph")
+	if changed {
+		t.Errorf("expected foreign wrapper entry not to be overwritten")
+	}
+
+	if AntigravityMcpBounded("codegraph") {
+		t.Errorf("foreign wrapper should not be considered bounded")
+	}
+
+	for _, f := range antigravityMcpConfigFiles() {
+		raw, _ := util.ReadFileSafe(f)
+		if !strings.Contains(raw, "my-wrapper") {
+			t.Errorf("wrapper entry was unexpectedly modified in %s: %s", f, raw)
+		}
+	}
+}
+
 func TestRemoveAntigravityMcp_CleansAdoptableAndLegacy(t *testing.T) {
 	withMcpTest(t)
 	// Seed adoptable in active files and legacy files

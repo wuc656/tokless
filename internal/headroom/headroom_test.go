@@ -2,6 +2,7 @@ package headroom
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -283,6 +284,9 @@ func TestHeadroomInstallFallsBackToPrebuiltWheels(t *testing.T) {
 			util.SetHomeOverride(home)
 			t.Setenv("TOKLESS_TEST", "")
 			t.Cleanup(func() { util.SetHomeOverride("") })
+			oldProbe := proxyLiveZProbe
+			proxyLiveZProbe = func(time.Duration) bool { return false }
+			t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 			p := util.HeadroomPathsResolved()
 			if err := os.MkdirAll(filepath.Dir(p.UV), 0o755); err != nil {
 				t.Fatal(err)
@@ -337,6 +341,15 @@ func TestHeadroomEnsureInstalledWhenProxyRunningSkipsUpgradeOnFileLock(t *testin
 	proxyLiveZProbe = func(time.Duration) bool { return true }
 	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
 
+	oldStop := stopProxyFunc
+	oldStart := startProxyFunc
+	t.Cleanup(func() {
+		stopProxyFunc = oldStop
+		startProxyFunc = oldStart
+	})
+	stopProxyFunc = func() error { return nil }
+	startProxyFunc = func() error { return nil }
+
 	oldRun := runHeadroom
 	t.Cleanup(func() { runHeadroom = oldRun })
 	runHeadroom = func(cmd string, args, env []string, ctx context.Context) util.ExecResult {
@@ -352,6 +365,44 @@ func TestHeadroomEnsureInstalledWhenProxyRunningSkipsUpgradeOnFileLock(t *testin
 	ok, err := EnsureInstalled(core.RunOpts{Upgrade: true})
 	if err != nil || !ok {
 		t.Fatalf("expected install success when proxy is already running, got ok=%v, err=%v", ok, err)
+	}
+}
+
+func TestHeadroomEnsureInstalledUpgradePropagatesRestartFailure(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+	t.Setenv("TOKLESS_TEST", "")
+
+	oldProbe := proxyLiveZProbe
+	proxyLiveZProbe = func(time.Duration) bool { return true }
+	t.Cleanup(func() { proxyLiveZProbe = oldProbe })
+
+	oldRun := runHeadroom
+	t.Cleanup(func() { runHeadroom = oldRun })
+	runHeadroom = func(cmd string, args, env []string, ctx context.Context) util.ExecResult {
+		return util.ExecResult{Code: 0}
+	}
+
+	oldStop := stopProxyFunc
+	oldStart := startProxyFunc
+	t.Cleanup(func() {
+		stopProxyFunc = oldStop
+		startProxyFunc = oldStart
+	})
+
+	stopProxyFunc = func() error { return errors.New("simulated stop error") }
+	startProxyFunc = func() error { return errors.New("simulated restart failure") }
+
+	p := util.HeadroomPathsResolved()
+	_ = util.EnsureDir(filepath.Dir(p.UV))
+	_ = os.WriteFile(p.UV, []byte("uv"), 0o755)
+	_ = util.EnsureDir(filepath.Dir(util.HeadroomBin()))
+	_ = os.WriteFile(util.HeadroomBin(), []byte("headroom"), 0o755)
+
+	ok, err := EnsureInstalled(core.RunOpts{Upgrade: true})
+	if ok || err == nil || !strings.Contains(err.Error(), "simulated restart failure") {
+		t.Fatalf("expected error with restart failure, got ok=%v, err=%v", ok, err)
 	}
 }
 

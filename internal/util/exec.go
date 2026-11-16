@@ -90,12 +90,16 @@ func Which(bin string) string {
 	sep := ":"
 	if IsWin {
 		sep = ";"
-		pe := os.Getenv("PATHEXT")
-		if pe == "" {
-			pe = ".EXE;.CMD;.BAT"
+		if filepath.Ext(bin) != "" {
+			exts = []string{""}
+		} else {
+			pe := os.Getenv("PATHEXT")
+			if pe == "" {
+				pe = ".EXE;.CMD;.BAT"
+			}
+			exts = strings.Split(pe, ";")
+			exts = append(exts, "") // bare name matches MSYS-style extensionless binaries
 		}
-		exts = strings.Split(pe, ";")
-		exts = append(exts, "") // bare name matches MSYS-style extensionless binaries
 	} else {
 		exts = []string{""}
 	}

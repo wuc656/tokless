@@ -69,3 +69,26 @@ func TestFindBinaryMiss(t *testing.T) {
 		t.Errorf("Expected FindBinary to miss and return empty string, got %s", res)
 	}
 }
+
+func TestWhichWithExtensionOnWindows(t *testing.T) {
+	origIsWin := IsWin
+	defer func() { IsWin = origIsWin }()
+	IsWin = true
+
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "git.exe")
+	if err := os.WriteFile(binPath, []byte("dummy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
+	// Search with extension
+	if got := Which("git.exe"); !EqualPaths(got, binPath) {
+		t.Errorf("Which(\"git.exe\") = %q, want %q", got, binPath)
+	}
+
+	// Search without extension
+	if got := Which("git"); !EqualPaths(got, binPath) {
+		t.Errorf("Which(\"git\") = %q, want %q", got, binPath)
+	}
+}

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -229,6 +230,42 @@ func TestWindowsUpdateInstallerStagesAfterDownload(t *testing.T) {
 	if swap < 0 || version < 0 || marker < 0 || swap >= version || version >= marker {
 		t.Fatalf("marker refresh must follow swap and version check: swap=%d version=%d marker=%d", swap, version, marker)
 	}
+}
+
+func TestInstallPs1SyntaxValid(t *testing.T) {
+	scriptPath := filepath.Join("..", "..", "scripts", "install.ps1")
+	b, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify ASCII-only
+	for i, c := range b {
+		if c > 127 {
+			t.Fatalf("install.ps1 byte %d is non-ASCII: 0x%x", i, c)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", `& {
+			$errs = $null
+			[System.Management.Automation.Language.Parser]::ParseFile("`+scriptPath+`", [ref]$null, [ref]$errs)
+			if ($errs) {
+				$errs | ForEach-Object { "$($_.Message) at line $($_.Extent.StartLineNumber)" }
+				exit 1
+			}
+		}`)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("install.ps1 has PowerShell parser syntax errors:\n%s", string(out))
+		}
+	}
+}
+
+func TestUpdateCompanionBinaryOnWindowsNoop(t *testing.T) {
+	// Must not panic or fail when companion file does not exist
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "tokless.exe")
+	_ = os.WriteFile(exe, []byte("dummy"), 0o755)
+	updateCompanionBinaryOnWindows(context.Background(), "http://127.0.0.1:0", exe)
 }
 
 func TestWithEnvKV(t *testing.T) {

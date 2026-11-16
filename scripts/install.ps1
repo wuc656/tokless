@@ -109,7 +109,6 @@ for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         }
     }
 }
-}
 if (-not (Test-Path -LiteralPath $tmp)) {
     Write-Host "Download finished but $tmp is missing." -ForegroundColor Red
     Write-AvHint $tmp ""
@@ -176,6 +175,25 @@ if ($null -eq $v) {
 if (-not $v) { $v = "unknown" }
 Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
 
+$wAsset = "toklessw-windows-x64.exe"
+$wUrl   = "$base/$wAsset"
+$wDest  = Join-Path $destDir "toklessw.exe"
+$wTmp   = "$wDest.download"
+$wOld   = "$wDest.old"
+try {
+    Remove-Item -LiteralPath $wTmp -Force -ErrorAction SilentlyContinue
+    Invoke-WebRequest -Uri $wUrl -OutFile $wTmp -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+    if (Test-Path -LiteralPath $wDest) {
+        Remove-Item -LiteralPath $wOld -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $wOld) { $wOld = "$wDest.old.$PID" }
+        Move-Item -LiteralPath $wDest -Destination $wOld -Force -ErrorAction SilentlyContinue
+    }
+    Move-Item -LiteralPath $wTmp -Destination $wDest -Force
+    Remove-Item -LiteralPath $wOld -Force -ErrorAction SilentlyContinue
+} catch {
+    Remove-Item -LiteralPath $wTmp -Force -ErrorAction SilentlyContinue
+}
+
 if ($selfUpdatePath) {
     Write-InstallMarker $v
     Write-Host "Update installed: $v" -ForegroundColor Green
@@ -196,12 +214,6 @@ if ($expanded -notcontains $destDir.TrimEnd("\")) {
 }
 $key.Close()
 
-$wAsset = "toklessw-windows-x64.exe"
-$wUrl   = "https://github.com/$Owner/$Repo/releases/latest/download/$wAsset"
-$wDest  = Join-Path $destDir "toklessw.exe"
-try {
-    Invoke-WebRequest -Uri $wUrl -OutFile $wDest -UseBasicParsing -ErrorAction SilentlyContinue
-} catch {}
 Write-Host "[OK] tokless $v ready -> $dest" -ForegroundColor Green
 
 Write-InstallMarker $v

@@ -195,7 +195,59 @@ func selfUpdateDirect(ctx context.Context, latest string) error {
 		_ = os.Remove(download)
 		return err
 	}
+	if runtime.GOOS == "windows" {
+		updateCompanionBinaryOnWindows(ctx, base, exe)
+	}
 	return nil
+}
+
+// updateCompanionBinaryOnWindows updates toklessw.exe alongside tokless.exe
+// (or tokless.exe alongside toklessw.exe) so the autostart GUI supervisor daemon
+// never lags behind the main CLI on Windows.
+func updateCompanionBinaryOnWindows(ctx context.Context, base, exe string) {
+	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
+		return
+	}
+	dir := filepath.Dir(exe)
+	baseName := strings.ToLower(filepath.Base(exe))
+	var companionName, companionAsset string
+	switch baseName {
+	case "tokless.exe":
+		companionName = "toklessw.exe"
+		companionAsset = "toklessw-windows-x64.exe"
+	case "toklessw.exe":
+		companionName = "tokless.exe"
+		companionAsset = "tokless-windows-x64.exe"
+	default:
+		return
+	}
+	companionPath := filepath.Join(dir, companionName)
+	if _, err := os.Stat(companionPath); err != nil {
+		return
+	}
+	download := companionPath + ".download"
+	_ = os.Remove(download)
+	if err := downloadFile(ctx, base+"/"+companionAsset, download); err != nil {
+		_ = os.Remove(download)
+		util.L.Warn("failed to download " + companionName + ": " + err.Error())
+		return
+	}
+	want, err := releaseChecksum(ctx, base+"/SHA256SUMS", companionAsset)
+	if err != nil {
+		_ = os.Remove(download)
+		util.L.Warn("failed to fetch checksum for " + companionName + ": " + err.Error())
+		return
+	}
+	if err := verifySHA256(download, want); err != nil {
+		_ = os.Remove(download)
+		util.L.Warn("checksum mismatch for " + companionName + ": " + err.Error())
+		return
+	}
+	if err := swapBinary(companionPath, download); err != nil {
+		_ = os.Remove(download)
+		util.L.Warn("failed to swap " + companionName + ": " + err.Error())
+		return
+	}
 }
 
 func downloadFile(ctx context.Context, url, path string) error {

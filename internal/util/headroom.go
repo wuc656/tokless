@@ -124,6 +124,12 @@ func uvRoamingToolDir() string {
 }
 
 func uvDefaultToolDir() string {
+	if homeOverride != "" {
+		if IsWin {
+			return filepath.Join(homeOverride, "AppData", "Local", "uv", "tools")
+		}
+		return filepath.Join(homeOverride, ".local", "share", "uv", "tools")
+	}
 	if IsWin {
 		base := os.Getenv("LOCALAPPDATA")
 		if base == "" {

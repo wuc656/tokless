@@ -89,6 +89,9 @@ var homeOverride string
 // SetHomeOverride redirects all home-relative paths (used by tests/sandbox).
 func SetHomeOverride(p string) { homeOverride = p }
 
+// HasHomeOverride reports whether a test/sandbox home override is active.
+func HasHomeOverride() bool { return homeOverride != "" }
+
 func resolveHome() string {
 	if IsWin {
 		if h, err := os.UserHomeDir(); err == nil && h != "" {

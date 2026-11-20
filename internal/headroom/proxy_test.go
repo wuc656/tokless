@@ -23,6 +23,7 @@ func isolateProxyOps(t *testing.T) {
 	t.Setenv("TOKLESS_HEADROOM_PROXY_PORT", "")
 	t.Setenv("TOKLESS_HEADROOM_ANTHROPIC_URL", "")
 	t.Setenv("TOKLESS_HEADROOM_OPENAI_URL", "")
+	t.Setenv("UV_TOOL_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(util.Home(), ".config"))
 	oldProbe, oldSpawn := proxyLiveZProbe, proxySpawn
 	oldIdentity, oldKill := proxyIdentity, proxyKill

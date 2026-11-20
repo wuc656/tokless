@@ -77,7 +77,12 @@ func TestScheduledTaskNotFoundRequiresExplicitError(t *testing.T) {
 
 func TestScheduledTaskRunningPropagatesStateErrors(t *testing.T) {
 	oldQuery := queryScheduledTaskState
-	t.Cleanup(func() { queryScheduledTaskState = oldQuery })
+	oldAbsent := scheduledTaskAbsent
+	t.Cleanup(func() {
+		queryScheduledTaskState = oldQuery
+		scheduledTaskAbsent = oldAbsent
+	})
+	scheduledTaskAbsent = func() bool { return false }
 	for _, tc := range []struct {
 		name string
 		out  string

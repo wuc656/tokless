@@ -67,9 +67,6 @@ func antigravityIDEConfig() (path string, cfg *util.OrderedMap, raw string, ok b
 		}
 		return path, util.NewOrderedMap(), "", true
 	}
-	if util.HasJSONCComments(raw) {
-		return path, nil, raw, false
-	}
 	cfg = util.TryParseJsonc(raw)
 	return path, cfg, raw, cfg != nil
 }
@@ -89,7 +86,7 @@ func antigravityIDEApplicable() bool {
 }
 
 func configureAntigravityIDE() (bool, error) {
-	path, cfg, _, ok := antigravityIDEConfig()
+	path, cfg, raw, ok := antigravityIDEConfig()
 	if !ok {
 		if !antigravityIDEApplicable() {
 			return false, nil
@@ -103,6 +100,17 @@ func configureAntigravityIDE() (bool, error) {
 	if AntigravityIDEProxyWired() {
 		return false, nil
 	}
+	var next string
+	if raw != "" && util.HasJSONCComments(raw) {
+		var err error
+		next, err = util.SetJSONCTopLevelValue(raw, antigravityIDEEndpointKey, antigravityURL())
+		if err != nil {
+			return false, err
+		}
+	} else {
+		cfg.Set(antigravityIDEEndpointKey, antigravityURL())
+		next = util.StringifyJSON(cfg)
+	}
 	state, err := json.Marshal(antigravityIDEProxyState{Path: path, HadValue: had, Value: old})
 	if err != nil {
 		return false, err
@@ -110,8 +118,7 @@ func configureAntigravityIDE() (bool, error) {
 	if err := util.WriteFile(antigravityIDEStateFile(), string(state)); err != nil {
 		return false, err
 	}
-	cfg.Set(antigravityIDEEndpointKey, antigravityURL())
-	if err := util.WriteFile(path, util.StringifyJSON(cfg)); err != nil {
+	if err := util.WriteFile(path, next); err != nil {
 		_ = os.Remove(antigravityIDEStateFile())
 		return false, err
 	}
@@ -141,13 +148,33 @@ func removeAntigravityIDE() bool {
 	if !exists {
 		return removeFileRetry(antigravityIDEStateFile()) == nil
 	}
-	if util.HasJSONCComments(raw) {
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
 		return false
 	}
-	cfg := util.TryParseJsonc(raw)
 	current, has := cfg.Get(antigravityIDEEndpointKey)
 	if !has || current != antigravityURL() {
 		return false
+	}
+	if util.HasJSONCComments(raw) {
+		var (
+			next    string
+			changed bool
+			err     error
+		)
+		if state.HadValue {
+			next, err = util.SetJSONCTopLevelValue(raw, antigravityIDEEndpointKey, state.Value)
+			changed = err == nil
+		} else {
+			next, changed, err = util.DeleteJSONCTopLevelKey(raw, antigravityIDEEndpointKey)
+		}
+		if err != nil || !changed {
+			return false
+		}
+		if err := util.WriteFile(state.Path, next); err != nil {
+			return false
+		}
+		return removeFileRetry(antigravityIDEStateFile()) == nil
 	}
 	if state.HadValue {
 		cfg.Set(antigravityIDEEndpointKey, state.Value)

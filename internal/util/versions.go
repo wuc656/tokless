@@ -398,7 +398,7 @@ func uvToolPath(id, exe string) string {
 	if exe == "" {
 		return ""
 	}
-	for _, tools := range headroomUVToolDirs() {
+	for _, tools := range HeadroomUVToolDirs() {
 		bin := filepath.Join(tools, id, "bin", exe)
 		if Exists(bin) {
 			return bin

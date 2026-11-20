@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode/utf16"
 )
@@ -270,4 +271,413 @@ func StringifyJSON(v any) string {
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(v)
 	return buf.String()
+}
+
+type jsoncTopProp struct {
+	key      string
+	keyStart int
+	valStart int
+	valEnd   int
+	commaIdx int
+}
+
+func isJSONCWhitespace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
+}
+
+func skipJSONCTrivia(s string, i int) (int, error) {
+	n := len(s)
+	for i < n {
+		c := s[i]
+		if isJSONCWhitespace(c) {
+			i++
+			continue
+		}
+		if c == '/' && i+1 < n {
+			if s[i+1] == '/' {
+				i += 2
+				for i < n && s[i] != '\n' {
+					i++
+				}
+				continue
+			}
+			if s[i+1] == '*' {
+				end := strings.Index(s[i+2:], "*/")
+				if end < 0 {
+					return 0, fmt.Errorf("unterminated block comment")
+				}
+				i = i + 2 + end + 2
+				continue
+			}
+		}
+		break
+	}
+	return i, nil
+}
+
+func scanJSONCString(s string, start int) (string, int, error) {
+	n := len(s)
+	if start >= n || s[start] != '"' {
+		return "", 0, fmt.Errorf("expected string at offset %d", start)
+	}
+	esc := false
+	for i := start + 1; i < n; i++ {
+		ch := s[i]
+		if esc {
+			esc = false
+			continue
+		}
+		if ch == '\\' {
+			esc = true
+			continue
+		}
+		if ch == '"' {
+			end := i + 1
+			var decoded string
+			if err := json.Unmarshal([]byte(s[start:end]), &decoded); err != nil {
+				return "", 0, err
+			}
+			return decoded, end, nil
+		}
+	}
+	return "", 0, fmt.Errorf("unterminated string literal")
+}
+
+func scanJSONCValueEnd(s string, start int) (int, error) {
+	n := len(s)
+	if start >= n {
+		return 0, fmt.Errorf("unexpected EOF while scanning JSON value")
+	}
+	switch s[start] {
+	case '"':
+		_, end, err := scanJSONCString(s, start)
+		return end, err
+	case '{', '[':
+		depth := 0
+		for i := start; i < n; {
+			switch c := s[i]; c {
+			case '"':
+				_, next, err := scanJSONCString(s, i)
+				if err != nil {
+					return 0, err
+				}
+				i = next
+			case '/', ' ', '\t', '\r', '\n':
+				if c == '/' && i+1 < n && (s[i+1] == '/' || s[i+1] == '*') {
+					next, err := skipJSONCTrivia(s, i)
+					if err != nil {
+						return 0, err
+					}
+					i = next
+				} else {
+					i++
+				}
+			case '{', '[':
+				depth++
+				i++
+			case '}', ']':
+				depth--
+				i++
+				if depth == 0 {
+					return i, nil
+				}
+			default:
+				i++
+			}
+		}
+		return 0, fmt.Errorf("unterminated composite JSON value")
+	default:
+		i := start
+		for i < n {
+			c := s[i]
+			if isJSONCWhitespace(c) || c == ',' || c == '}' || c == ']' {
+				break
+			}
+			if c == '/' && i+1 < n && (s[i+1] == '/' || s[i+1] == '*') {
+				break
+			}
+			i++
+		}
+		if i == start {
+			return 0, fmt.Errorf("invalid JSON value at offset %d", start)
+		}
+		return i, nil
+	}
+}
+
+func scanTopLevelJSONCProps(s string) (openBrace, closeBrace int, props []jsoncTopProp, err error) {
+	i, err := skipJSONCTrivia(s, 0)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	if i >= len(s) || s[i] != '{' {
+		return 0, 0, nil, fmt.Errorf("expected top-level JSON object")
+	}
+	openBrace = i
+	i++
+
+	for {
+		i, err = skipJSONCTrivia(s, i)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if i >= len(s) {
+			return 0, 0, nil, fmt.Errorf("unterminated top-level JSON object")
+		}
+		if s[i] == '}' {
+			closeBrace = i
+			break
+		}
+		keyStart := i
+		key, keyEnd, err := scanJSONCString(s, keyStart)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		colonIdx, err := skipJSONCTrivia(s, keyEnd)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if colonIdx >= len(s) || s[colonIdx] != ':' {
+			return 0, 0, nil, fmt.Errorf("expected ':' after key %q", key)
+		}
+		valStart, err := skipJSONCTrivia(s, colonIdx+1)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		valEnd, err := scanJSONCValueEnd(s, valStart)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		afterVal, err := skipJSONCTrivia(s, valEnd)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+		if afterVal >= len(s) {
+			return 0, 0, nil, fmt.Errorf("unexpected EOF after value for key %q", key)
+		}
+		commaIdx := -1
+		switch s[afterVal] {
+		case ',':
+			commaIdx = afterVal
+			i = afterVal + 1
+		case '}':
+			i = afterVal
+		default:
+			return 0, 0, nil, fmt.Errorf("expected ',' or '}' after key %q", key)
+		}
+		props = append(props, jsoncTopProp{
+			key:      key,
+			keyStart: keyStart,
+			valStart: valStart,
+			valEnd:   valEnd,
+			commaIdx: commaIdx,
+		})
+	}
+
+	tail, err := skipJSONCTrivia(s, closeBrace+1)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	if tail != len(s) {
+		return 0, 0, nil, fmt.Errorf("unexpected trailing content at offset %d", tail)
+	}
+	return openBrace, closeBrace, props, nil
+}
+
+func marshalJSONInline(v any) (string, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(buf.String(), "\n"), nil
+}
+
+func lineIndentAt(s string, pos int) (indent string, lineStart int, onlySpaceBefore bool) {
+	idx := strings.LastIndexByte(s[:pos], '\n')
+	lineStart = 0
+	if idx >= 0 {
+		lineStart = idx + 1
+	}
+	prefix := s[lineStart:pos]
+	for i := 0; i < len(prefix); i++ {
+		if prefix[i] != ' ' && prefix[i] != '\t' {
+			return "", lineStart, false
+		}
+	}
+	return prefix, lineStart, true
+}
+
+func detectJSONCStyle(s string, props []jsoncTopProp) (indent, eol string) {
+	eol = "\n"
+	if strings.Contains(s, "\r\n") {
+		eol = "\r\n"
+	}
+	indent = "  "
+	for _, p := range props {
+		if ind, _, ok := lineIndentAt(s, p.keyStart); ok && ind != "" {
+			return ind, eol
+		}
+	}
+	return indent, eol
+}
+
+// SetJSONCTopLevelValue updates or inserts a top-level key in JSON/JSONC text while
+// preserving comments, key order, and formatting.
+func SetJSONCTopLevelValue(raw, key string, value any) (string, error) {
+	s := NormalizeJSONText(raw)
+	valJSON, err := marshalJSONInline(value)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(s) == "" {
+		keyJSON, err := marshalJSONInline(key)
+		if err != nil {
+			return "", err
+		}
+		out := "{\n  " + keyJSON + ": " + valJSON + "\n}\n"
+		if _, perr := ParseJsonc(out); perr != nil {
+			return "", perr
+		}
+		return out, nil
+	}
+
+	openBrace, closeBrace, props, err := scanTopLevelJSONCProps(s)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range props {
+		if p.key == key {
+			out := s[:p.valStart] + valJSON + s[p.valEnd:]
+			if _, perr := ParseJsonc(out); perr != nil {
+				return "", perr
+			}
+			return out, nil
+		}
+	}
+
+	keyJSON, err := marshalJSONInline(key)
+	if err != nil {
+		return "", err
+	}
+	indent, eol := detectJSONCStyle(s, props)
+
+	var out string
+	if len(props) == 0 {
+		if !strings.Contains(s[openBrace:closeBrace], "\n") {
+			out = s[:openBrace+1] + eol + indent + keyJSON + ": " + valJSON + eol + s[closeBrace:]
+		} else {
+			_, closeLineStart, _ := lineIndentAt(s, closeBrace)
+			if closeLineStart <= openBrace {
+				closeLineStart = closeBrace
+			}
+			out = s[:closeLineStart] + indent + keyJSON + ": " + valJSON + eol + s[closeLineStart:]
+		}
+	} else {
+		last := props[len(props)-1]
+		if !strings.Contains(s[openBrace:closeBrace], "\n") {
+			prefix := s[:last.valEnd]
+			suffix := s[last.valEnd:]
+			if last.commaIdx >= 0 {
+				prefix = s[:last.commaIdx+1]
+				suffix = s[last.commaIdx+1:]
+			} else {
+				prefix += ","
+			}
+			out = prefix + " " + keyJSON + ": " + valJSON + suffix
+		} else {
+			work := s
+			if last.commaIdx < 0 {
+				work = work[:last.valEnd] + "," + work[last.valEnd:]
+				closeBrace++
+			}
+			_, closeLineStart, _ := lineIndentAt(work, closeBrace)
+			if closeLineStart <= openBrace {
+				closeLineStart = closeBrace
+			}
+			out = work[:closeLineStart] + indent + keyJSON + ": " + valJSON + eol + work[closeLineStart:]
+		}
+	}
+
+	if _, perr := ParseJsonc(out); perr != nil {
+		return "", perr
+	}
+	return out, nil
+}
+
+// lineTailIfOwnProperty returns the byte offset immediately after the EOL following endPos
+// if only horizontal whitespace or a // comment remains before EOL.
+func lineTailIfOwnProperty(s string, endPos int) (int, bool) {
+	i := endPos
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i < len(s)-1 && s[i] == '/' && s[i+1] == '/' {
+		for i < len(s) && s[i] != '\n' {
+			i++
+		}
+	}
+	if i < len(s) && s[i] == '\r' {
+		i++
+	}
+	if i < len(s) && s[i] == '\n' {
+		return i + 1, true
+	}
+	return endPos, false
+}
+
+// DeleteJSONCTopLevelKey removes a top-level key from JSON/JSONC text while preserving
+// unrelated comments and formatting.
+func DeleteJSONCTopLevelKey(raw, key string) (string, bool, error) {
+	s := NormalizeJSONText(raw)
+	if strings.TrimSpace(s) == "" {
+		return raw, false, nil
+	}
+	_, _, props, err := scanTopLevelJSONCProps(s)
+	if err != nil {
+		return "", false, err
+	}
+	targetIdx := -1
+	for i, p := range props {
+		if p.key == key {
+			targetIdx = i
+			break
+		}
+	}
+	if targetIdx < 0 {
+		return raw, false, nil
+	}
+
+	p := props[targetIdx]
+	endPos := p.valEnd
+	if p.commaIdx >= 0 {
+		endPos = p.commaIdx + 1
+	}
+
+	_, lineStart, soleOnLeft := lineIndentAt(s, p.keyStart)
+	tailPos, soleOnRight := lineTailIfOwnProperty(s, endPos)
+
+	delStart, delEnd := p.keyStart, endPos
+	if soleOnLeft && soleOnRight {
+		delStart = lineStart
+		delEnd = tailPos
+	} else if !soleOnLeft && delStart > 0 && s[delStart-1] == ' ' {
+		for delStart > 0 && s[delStart-1] == ' ' {
+			delStart--
+		}
+	}
+
+	out := s[:delStart] + s[delEnd:]
+	if p.commaIdx < 0 && targetIdx > 0 {
+		prevComma := props[targetIdx-1].commaIdx
+		if prevComma >= 0 && prevComma < delStart {
+			out = out[:prevComma] + out[prevComma+1:]
+		}
+	}
+
+	if _, perr := ParseJsonc(out); perr != nil {
+		return "", false, perr
+	}
+	return out, true, nil
 }

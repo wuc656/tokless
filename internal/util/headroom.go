@@ -79,18 +79,48 @@ func HeadroomInstalledVersion() *string {
 
 func HeadroomMetadataVersion() *string { return headroomDistInfoVersion() }
 
-// headroomUVToolDirs returns candidate uv tool directories: the UV_TOOL_DIR
-// override, the uv default tool dir, then the Tokless-managed tool dir.
-func headroomUVToolDirs() []string {
+// HeadroomUVToolDirs returns candidate uv tool directories: the UV_TOOL_DIR
+// override, Windows Roaming uv tool dir, the uv default tool dir, then the
+// Tokless-managed tool dir.
+func HeadroomUVToolDirs() []string {
 	var dirs []string
-	if env := os.Getenv("UV_TOOL_DIR"); env != "" {
-		dirs = append(dirs, env)
+	seen := map[string]bool{}
+	add := func(d string) {
+		if d == "" {
+			return
+		}
+		clean := filepath.Clean(d)
+		key := clean
+		if IsWin {
+			key = strings.ToLower(clean)
+		}
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		dirs = append(dirs, clean)
 	}
-	if dir := uvDefaultToolDir(); dir != "" {
-		dirs = append(dirs, dir)
-	}
-	dirs = append(dirs, HeadroomPathsResolved().Tools)
+	add(os.Getenv("UV_TOOL_DIR"))
+	add(uvRoamingToolDir())
+	add(uvDefaultToolDir())
+	add(HeadroomPathsResolved().Tools)
 	return dirs
+}
+
+func headroomUVToolDirs() []string { return HeadroomUVToolDirs() }
+
+func uvRoamingToolDir() string {
+	if !IsWin {
+		return ""
+	}
+	if homeOverride != "" {
+		return filepath.Join(homeOverride, "AppData", "Roaming", "uv", "tools")
+	}
+	base := os.Getenv("APPDATA")
+	if base == "" {
+		base = filepath.Join(Home(), "AppData", "Roaming")
+	}
+	return filepath.Join(base, "uv", "tools")
 }
 
 func uvDefaultToolDir() string {

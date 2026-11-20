@@ -87,3 +87,39 @@ func TestHeadroomDistInfoVersionUVToolLayout(t *testing.T) {
 		t.Fatalf("dirname fallback: got %v, want 0.38.0", v)
 	}
 }
+
+func TestHeadroomDistInfoVersionWindowsRoamingUVToolLayout(t *testing.T) {
+	origIsWin := IsWin
+	IsWin = true
+	t.Cleanup(func() { IsWin = origIsWin })
+
+	home := t.TempDir()
+	SetHomeOverride(home)
+	t.Cleanup(func() { SetHomeOverride("") })
+	t.Setenv("UV_TOOL_DIR", "")
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	t.Setenv("APPDATA", `C:\should\not\be\used\in\test`)
+
+	roamingTools := filepath.Join(home, "AppData", "Roaming", "uv", "tools")
+	found := false
+	for _, d := range HeadroomUVToolDirs() {
+		if d == roamingTools {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("HeadroomUVToolDirs() = %v, missing %q", HeadroomUVToolDirs(), roamingTools)
+	}
+
+	dist := filepath.Join(roamingTools, "headroom-ai", "Lib", "site-packages", "headroom_ai-0.44.0.dist-info")
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "METADATA"), []byte("Metadata-Version: 2.1\nName: headroom-ai\nVersion: 0.44.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if v := headroomDistInfoVersion(); v == nil || *v != "0.44.0" {
+		t.Fatalf("roaming uv tool layout: got %v, want 0.44.0", v)
+	}
+}

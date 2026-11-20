@@ -253,7 +253,7 @@ func antigravityClearProcessEnv() {
 // antigravityWriteWindowsUserEnv persists both keys to the current-user
 // Environment registry so Windows IDE/desktop launches see the proxy.
 func antigravityWindowsUserEnvCompatible() bool {
-	if !util.IsWin {
+	if !util.IsWin || util.IsRunningInTest() {
 		return true
 	}
 	u := antigravityURL()
@@ -268,12 +268,8 @@ $k.Close()
 	return util.Run("powershell", []string{"-NoProfile", "-Command", ps}, util.RunOptions{Capture: true}).Code == 0
 }
 
-func antigravityWriteWindowsUserEnv() (bool, bool) {
-	if !util.IsWin {
-		return false, true
-	}
-	u := antigravityURL()
-	ps := `$ErrorActionPreference='Stop'
+func antigravityWriteWindowsUserEnvScript(u string) string {
+	return `$ErrorActionPreference='Stop'
 $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
 if ($null -eq $k) { $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment') }
 $want = @{
@@ -313,14 +309,24 @@ try {
   exit 3
 }
 $k.Close()
-if ($changed) { Write-Output 'changed' }
+if ($changed) {
+  [Environment]::SetEnvironmentVariable('` + antigravityWindowsMarker + `', ('proxy=' + $mask), 'User')
+  Write-Output 'changed'
+}
 `
+}
+
+func antigravityWriteWindowsUserEnv() (bool, bool) {
+	if !util.IsWin || util.IsRunningInTest() {
+		return false, true
+	}
+	ps := antigravityWriteWindowsUserEnvScript(antigravityURL())
 	r := util.Run("powershell", []string{"-NoProfile", "-Command", ps}, util.RunOptions{Capture: true})
 	return r.Code == 0 && strings.Contains(r.Stdout, "changed"), r.Code == 0
 }
 
 func antigravityClearWindowsUserEnv() bool {
-	if !util.IsWin {
+	if !util.IsWin || util.IsRunningInTest() {
 		return false
 	}
 	u := antigravityURL()
@@ -335,12 +341,12 @@ $mask = [int]$Matches[1]
 foreach ($name in $names) {
   $cur = $k.GetValue($name, $null)
   $bit = if ($name -eq '` + antigravityProxyEnvKey + `') { 1 } else { 2 }
-  if (($mask -band $bit) -ne 0 -and $cur -eq '` + u + `') {
-    $k.DeleteValue($name, $false)
+  if ((($mask -band $bit) -ne 0 -or $mask -eq 0) -and $cur -eq '` + u + `') {
+    [Environment]::SetEnvironmentVariable($name, $null, 'User')
     $changed = $true
   }
 }
-  $k.DeleteValue('` + antigravityWindowsMarker + `', $false)
+[Environment]::SetEnvironmentVariable('` + antigravityWindowsMarker + `', $null, 'User')
 $k.Close()
 if ($changed) { Write-Output 'changed' }
 `

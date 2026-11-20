@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -315,5 +316,78 @@ func TestRemoveFileRetryGivesUpOnPersistentLock(t *testing.T) {
 	}
 	if calls != 6 {
 		t.Fatalf("remove calls = %d, want 6", calls)
+	}
+}
+
+func TestAntigravityIDEProxyLifecyclePreservesJSONCComments(t *testing.T) {
+	setTestHome(t)
+	settings := antigravityTestSettings(t)
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := "// header comment\n{\n  /* block comment */\n  \"editor.fontSize\": 14 // inline comment\n}\n"
+	if err := os.WriteFile(settings, []byte(seed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !antigravityIDECompatible() {
+		t.Fatal("commented settings.json without conflicting key should be compatible")
+	}
+	changed, err := configureAntigravityIDE()
+	if err != nil || !changed || !AntigravityIDEProxyWired() {
+		t.Fatalf("configure commented settings: changed=%v wired=%v err=%v", changed, AntigravityIDEProxyWired(), err)
+	}
+	raw, _ := os.ReadFile(settings)
+	for _, want := range []string{"// header comment", "/* block comment */", "// inline comment", antigravityIDEEndpointKey} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("configured settings missing %q:\n%s", want, raw)
+		}
+	}
+	if _, err := util.ParseJsonc(string(raw)); err != nil {
+		t.Fatalf("configured settings not valid JSONC: %v\n%s", err, raw)
+	}
+	if changed2, err2 := configureAntigravityIDE(); err2 != nil || changed2 {
+		t.Fatalf("second configure should be no-op: changed=%v err=%v", changed2, err2)
+	}
+	if !removeAntigravityIDE() {
+		t.Fatal("remove failed for commented settings")
+	}
+	restored, _ := os.ReadFile(settings)
+	if strings.Contains(string(restored), antigravityIDEEndpointKey) {
+		t.Fatalf("endpoint key not removed:\n%s", restored)
+	}
+	for _, want := range []string{"// header comment", "/* block comment */", `"editor.fontSize": 14 // inline comment`} {
+		if !strings.Contains(string(restored), want) {
+			t.Fatalf("restored settings lost %q:\n%s", want, restored)
+		}
+	}
+	if _, err := util.ParseJsonc(string(restored)); err != nil {
+		t.Fatalf("restored settings not valid JSONC: %v\n%s", err, restored)
+	}
+}
+
+func TestAntigravityWriteWindowsUserEnvScriptBroadcastsChange(t *testing.T) {
+	script := antigravityWriteWindowsUserEnvScript("http://127.0.0.1:8787")
+	want := "[Environment]::SetEnvironmentVariable('" + antigravityWindowsMarker + "', ('proxy=' + $mask), 'User')"
+	if !strings.Contains(script, want) {
+		t.Fatalf("script missing WM_SETTINGCHANGE broadcast:\n%s", script)
+	}
+	for i := 0; i < len(script); i++ {
+		if script[i] > 127 {
+			t.Fatalf("non-ASCII byte at %d: 0x%x", i, script[i])
+		}
+	}
+	if runtime.GOOS == "windows" {
+		psFile := filepath.Join(t.TempDir(), "env.ps1")
+		if err := os.WriteFile(psFile, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("powershell", "-NoProfile", "-Command", `& {
+			$errs = $null
+			[System.Management.Automation.Language.Parser]::ParseFile("`+psFile+`", [ref]$null, [ref]$errs)
+			if ($errs) { $errs | ForEach-Object { $_.Message }; exit 1 }
+		}`)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("PowerShell AST parse failed: %v\n%s", err, out)
+		}
 	}
 }

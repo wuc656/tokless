@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"unicode/utf16"
 )
@@ -352,5 +353,65 @@ func TestHasJSONCCommentsUTF16(t *testing.T) {
 	}
 	if HasJSONCComments(utf16Bytes(`{"a":"//x"}`, true, true)) {
 		t.Fatal("string marker in UTF-16 input must not count")
+	}
+}
+
+func TestSetAndDeleteJSONCTopLevelPreservesComments(t *testing.T) {
+	in := "// header comment\n{\n  /* block */\n  \"editor.fontSize\": 14 // inline comment\n}\n"
+	added, err := SetJSONCTopLevelValue(in, "jetski.cloudCodeUrl", "http://127.0.0.1:8787")
+	if err != nil {
+		t.Fatalf("SetJSONCTopLevelValue insert: %v", err)
+	}
+	for _, want := range []string{
+		"// header comment",
+		"/* block */",
+		`"editor.fontSize": 14, // inline comment`,
+		`"jetski.cloudCodeUrl": "http://127.0.0.1:8787"`,
+	} {
+		if !strings.Contains(added, want) {
+			t.Fatalf("inserted output missing %q:\n%s", want, added)
+		}
+	}
+
+	updated, err := SetJSONCTopLevelValue(added, "jetski.cloudCodeUrl", "http://127.0.0.1:9999")
+	if err != nil {
+		t.Fatalf("SetJSONCTopLevelValue update: %v", err)
+	}
+	if !strings.Contains(updated, `"jetski.cloudCodeUrl": "http://127.0.0.1:9999"`) ||
+		!strings.Contains(updated, "// inline comment") {
+		t.Fatalf("update broke formatting or comments:\n%s", updated)
+	}
+
+	deleted, removed, err := DeleteJSONCTopLevelKey(updated, "jetski.cloudCodeUrl")
+	if err != nil || !removed {
+		t.Fatalf("DeleteJSONCTopLevelKey: removed=%v err=%v", removed, err)
+	}
+	if strings.Contains(deleted, "jetski.cloudCodeUrl") {
+		t.Fatalf("key still present after delete:\n%s", deleted)
+	}
+	for _, want := range []string{"// header comment", "/* block */", `"editor.fontSize": 14 // inline comment`} {
+		if !strings.Contains(deleted, want) {
+			t.Fatalf("delete lost %q:\n%s", want, deleted)
+		}
+	}
+}
+
+func TestSetAndDeleteJSONCCRLFAndOnlyKeyWithComment(t *testing.T) {
+	crlf := "{\r\n  \"a\": 1 // keep\r\n}\r\n"
+	withB, err := SetJSONCTopLevelValue(crlf, "b", "x")
+	if err != nil {
+		t.Fatalf("CRLF insert: %v", err)
+	}
+	if !strings.Contains(withB, "\r\n  \"b\": \"x\"\r\n") {
+		t.Fatalf("CRLF not preserved:\n%q", withB)
+	}
+
+	onlyComment := "{\n  // only comment\n  \"jetski.cloudCodeUrl\": \"http://127.0.0.1:8787\"\n}\n"
+	deleted, removed, err := DeleteJSONCTopLevelKey(onlyComment, "jetski.cloudCodeUrl")
+	if err != nil || !removed {
+		t.Fatalf("delete only key: removed=%v err=%v", removed, err)
+	}
+	if !strings.Contains(deleted, "// only comment") || strings.Contains(deleted, "jetski.cloudCodeUrl") {
+		t.Fatalf("unexpected result after deleting only key:\n%s", deleted)
 	}
 }

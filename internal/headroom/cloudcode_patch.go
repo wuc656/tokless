@@ -9,12 +9,21 @@ import (
 )
 
 const cloudCodePatchMarker = "gemini:tool_schema_compaction"
+const cloudCodeRoutesPatchMarker = "daily-cloudcode-pa.sandbox.googleapis.com"
 
 func cloudCodePatchRoots() []string {
 	tools := util.HeadroomPathsResolved().Tools
 	return []string{
 		filepath.Join(tools, "headroom-ai", "lib", "python*", "site-packages", "headroom", "proxy", "handlers", "gemini.py"),
 		filepath.Join(tools, "headroom-ai", "Lib", "site-packages", "headroom", "proxy", "handlers", "gemini.py"),
+	}
+}
+
+func cloudCodeRoutesPatchRoots() []string {
+	tools := util.HeadroomPathsResolved().Tools
+	return []string{
+		filepath.Join(tools, "headroom-ai", "lib", "python*", "site-packages", "headroom", "providers", "proxy_routes.py"),
+		filepath.Join(tools, "headroom-ai", "Lib", "site-packages", "headroom", "providers", "proxy_routes.py"),
 	}
 }
 
@@ -51,6 +60,32 @@ func patchCloudCodeGemini(path string) (bool, error) {
 	return true, nil
 }
 
+func patchCloudCodeProxyRoutes(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	if bytes.Contains(data, []byte(cloudCodeRoutesPatchMarker)) {
+		return false, nil
+	}
+
+	old := []byte("        normalized_cloudcode_path = normalize_cloudcode_passthrough_path(path)\n        if normalized_cloudcode_path is not None:\n            normalize_request_path(request, normalized_cloudcode_path)\n\n            return await proxy.handle_passthrough(\n                request,\n                _api_target(proxy, \"cloudcode\"),\n            )\n")
+	new := []byte("        normalized_cloudcode_path = normalize_cloudcode_passthrough_path(path)\n        if normalized_cloudcode_path is not None:\n            normalize_request_path(request, normalized_cloudcode_path)\n            _cloudcode_target = _api_target(proxy, \"cloudcode\")\n            if \"antigravity\" in request.headers.get(\"user-agent\", \"\").lower():\n                _cloudcode_target = \"https://daily-cloudcode-pa.sandbox.googleapis.com\"\n\n            return await proxy.handle_passthrough(\n                request,\n                _cloudcode_target,\n            )\n")
+
+	if bytes.Count(data, old) != 1 {
+		return false, nil
+	}
+	patched := bytes.Replace(data, old, new, 1)
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	if err := util.WriteFileAtomic(path, string(patched), info.Mode().Perm()); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func applyCloudCodePatch() bool {
 	changed := false
 	for _, pattern := range cloudCodePatchRoots() {
@@ -62,6 +97,20 @@ func applyCloudCodePatch() bool {
 			patched, err := patchCloudCodeGemini(path)
 			if err != nil {
 				util.L.Sub("headroom Cloud Code patch skipped: " + err.Error())
+				continue
+			}
+			changed = changed || patched
+		}
+	}
+	for _, pattern := range cloudCodeRoutesPatchRoots() {
+		paths, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, path := range paths {
+			patched, err := patchCloudCodeProxyRoutes(path)
+			if err != nil {
+				util.L.Sub("headroom Cloud Code routes patch skipped: " + err.Error())
 				continue
 			}
 			changed = changed || patched

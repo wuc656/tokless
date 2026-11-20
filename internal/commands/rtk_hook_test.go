@@ -1366,3 +1366,87 @@ func TestRunRtkHookCmdKimiDeniesRawGit(t *testing.T) {
 		})
 	}
 }
+
+func TestHasShellPipeDistinguishesLogicalOr(t *testing.T) {
+	for _, tc := range []struct {
+		cmd  string
+		want bool
+	}{
+		{`git status | head`, true},
+		{`go test ./... || echo fail`, false},
+		{`echo "a | b"`, false},
+		{`echo 'a | b'`, false},
+		{`go test ./... || git status | head`, true},
+		{`git diff --quiet || git status`, false},
+	} {
+		if got := hasShellPipe(tc.cmd); got != tc.want {
+			t.Errorf("hasShellPipe(%q) = %v, want %v", tc.cmd, got, tc.want)
+		}
+	}
+}
+
+func TestRtkRewriteAllowsLogicalOr(t *testing.T) {
+	orig := rtkRewriteDirect
+	rtkRewriteDirect = func(cmdLine string) (string, bool) {
+		return "rtk " + cmdLine, true
+	}
+	t.Cleanup(func() { rtkRewriteDirect = orig })
+
+	got, changed := rtkRewrite(`go test ./... || echo fail`)
+	if !changed || got != `rtk go test ./... || echo fail` {
+		t.Fatalf("rtkRewrite logical OR = (%q, %v), want rewritten", got, changed)
+	}
+}
+
+func TestRtkRewritePowerShellWrapper(t *testing.T) {
+	orig := rtkRewriteDirect
+	rtkRewriteDirect = func(cmdLine string) (string, bool) {
+		lower := strings.ToLower(cmdLine)
+		if strings.HasPrefix(lower, "pwsh") || strings.HasPrefix(lower, "powershell") {
+			return "", false
+		}
+		return "rtk " + cmdLine, true
+	}
+	t.Cleanup(func() { rtkRewriteDirect = orig })
+	for _, tc := range []struct {
+		name        string
+		cmd         string
+		want        string
+		wantChanged bool
+	}{
+		{
+			name:        "pwsh double quoted",
+			cmd:         `pwsh -NoProfile -Command "git status"`,
+			want:        `pwsh -NoProfile -Command "rtk git status"`,
+			wantChanged: true,
+		},
+		{
+			name:        "powershell single quoted with execution policy",
+			cmd:         `powershell -NoProfile -ExecutionPolicy Bypass -Command 'go test ./...'`,
+			want:        `powershell -NoProfile -ExecutionPolicy Bypass -Command 'rtk go test ./...'`,
+			wantChanged: true,
+		},
+		{
+			name:        "skips inner pipe",
+			cmd:         `pwsh -NoProfile -Command "git status | head"`,
+			wantChanged: false,
+		},
+		{
+			name:        "skips double-quoted powershell variable",
+			cmd:         `pwsh -NoProfile -Command "echo $HOME"`,
+			wantChanged: false,
+		},
+		{
+			name:        "skips trailing command outside quotes",
+			cmd:         `pwsh -NoProfile -Command "git status" && echo done`,
+			wantChanged: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := rtkRewrite(tc.cmd)
+			if changed != tc.wantChanged || (tc.wantChanged && got != tc.want) {
+				t.Fatalf("rtkRewrite(%q) = (%q, %v), want (%q, %v)", tc.cmd, got, changed, tc.want, tc.wantChanged)
+			}
+		})
+	}
+}

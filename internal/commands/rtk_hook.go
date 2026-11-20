@@ -115,10 +115,9 @@ func RunRtkHookCursor() int {
 	return 0
 }
 
-func rtkRewrite(cmdLine string) (string, bool) {
-	if cmdLine == "" || rtkUnsafeFind(cmdLine) || hasShellPipe(cmdLine) {
-		return "", false
-	}
+var rtkRewriteDirect = runRtkRewriteBinary
+
+func runRtkRewriteBinary(cmdLine string) (string, bool) {
 	rtkPath := util.ResolveRtkBin()
 	if rtkPath == "" {
 		return "", false
@@ -142,6 +141,100 @@ func rtkRewrite(cmdLine string) (string, bool) {
 	return newCmd, true
 }
 
+func rtkRewrite(cmdLine string) (string, bool) {
+	if cmdLine == "" || rtkUnsafeFind(cmdLine) || hasShellPipe(cmdLine) {
+		return "", false
+	}
+	if newCmd, changed := rtkRewriteDirect(cmdLine); changed {
+		return newCmd, true
+	}
+	return rtkRewritePowerShellWrapper(cmdLine)
+}
+
+// rtkRewritePowerShellWrapper unwraps single-command `pwsh`/`powershell -Command "..."`
+// invocations so Windows agent commands still benefit from RTK output compression.
+func rtkRewritePowerShellWrapper(cmdLine string) (string, bool) {
+	trimmed := strings.TrimSpace(cmdLine)
+	if trimmed == "" || strings.ContainsAny(trimmed, "\r\n") {
+		return "", false
+	}
+	pos := 0
+	nextTok := func() (tok string, start int, ok bool) {
+		for pos < len(trimmed) && (trimmed[pos] == ' ' || trimmed[pos] == '\t') {
+			pos++
+		}
+		if pos >= len(trimmed) {
+			return "", pos, false
+		}
+		start = pos
+		for pos < len(trimmed) && trimmed[pos] != ' ' && trimmed[pos] != '\t' {
+			pos++
+		}
+		return trimmed[start:pos], start, true
+	}
+
+	bin, _, ok := nextTok()
+	if !ok {
+		return "", false
+	}
+	switch strings.ToLower(bin) {
+	case "pwsh", "pwsh.exe", "powershell", "powershell.exe":
+	default:
+		return "", false
+	}
+
+	foundCmdFlag := false
+	for {
+		tok, _, ok := nextTok()
+		if !ok {
+			return "", false
+		}
+		switch strings.ToLower(tok) {
+		case "-noprofile", "-noninteractive", "-nologo":
+			continue
+		case "-executionpolicy":
+			if _, _, ok := nextTok(); !ok {
+				return "", false
+			}
+			continue
+		case "-command", "-c":
+			foundCmdFlag = true
+		default:
+			return "", false
+		}
+		if foundCmdFlag {
+			break
+		}
+	}
+
+	for pos < len(trimmed) && (trimmed[pos] == ' ' || trimmed[pos] == '\t') {
+		pos++
+	}
+	if pos >= len(trimmed) {
+		return "", false
+	}
+	quote := trimmed[pos]
+	if quote != '"' && quote != '\'' {
+		return "", false
+	}
+	if len(trimmed)-pos < 2 || trimmed[len(trimmed)-1] != quote {
+		return "", false
+	}
+	inner := trimmed[pos+1 : len(trimmed)-1]
+	if inner == "" || strings.IndexByte(inner, quote) >= 0 {
+		return "", false
+	}
+	if quote == '"' && strings.ContainsAny(inner, "$`") {
+		return "", false
+	}
+
+	rewritten, changed := rtkRewrite(inner)
+	if !changed || strings.IndexByte(rewritten, quote) >= 0 {
+		return "", false
+	}
+	return trimmed[:pos+1] + rewritten + string(quote), true
+}
+
 func hasShellPipe(line string) bool {
 	inSingle, inDouble := false, false
 	for i := 0; i < len(line); i++ {
@@ -156,6 +249,10 @@ func hasShellPipe(line string) bool {
 			}
 		case '|':
 			if !inSingle && !inDouble {
+				if i+1 < len(line) && line[i+1] == '|' {
+					i++
+					continue
+				}
 				return true
 			}
 		}

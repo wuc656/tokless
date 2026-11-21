@@ -44,9 +44,9 @@ done
 (
   cd "$OUT"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum tokless-* toklessw-* | LC_ALL=C sort -k2 > SHA256SUMS
+    sha256sum tokless-* toklessw-* | sed 's/ \*/  /' | LC_ALL=C sort -k2 > SHA256SUMS
   else
-    shasum -a 256 tokless-* toklessw-* | LC_ALL=C sort -k2 > SHA256SUMS
+    shasum -a 256 tokless-* toklessw-* | sed 's/ \*/  /' | LC_ALL=C sort -k2 > SHA256SUMS
   fi
 )
 

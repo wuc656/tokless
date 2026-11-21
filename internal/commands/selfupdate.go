@@ -303,7 +303,7 @@ func releaseChecksum(ctx context.Context, url, asset string) (string, error) {
 func checksumFor(body, asset string) (string, bool) {
 	for _, line := range strings.Split(body, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[1] == asset {
+		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == asset {
 			return fields[0], true
 		}
 	}

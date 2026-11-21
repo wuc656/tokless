@@ -503,6 +503,9 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 	if !applyCloudCodePatch() {
 		t.Fatal("expected applyCloudCodePatch to patch files under Roaming uv tools dir")
 	}
+	if applied, total := CloudCodePatchStatus(); total != 7 || applied != 7 {
+		t.Fatalf("CloudCodePatchStatus() = (%d, %d), want (7, 7)", applied, total)
+	}
 	if applyCloudCodePatch() {
 		t.Fatal("expected second applyCloudCodePatch call to be idempotent")
 	}

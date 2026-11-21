@@ -266,3 +266,68 @@ func applyCloudCodePatch() bool {
 	) || changed
 	return changed
 }
+
+// CloudCodePatchStatus inspects installed Headroom site-packages without mutating them
+// and reports how many expected Cloud Code / Antigravity patch markers are present.
+func CloudCodePatchStatus() (applied, total int) {
+	if util.IsRunningInTest() && !util.HasHomeOverride() {
+		return 0, 0
+	}
+	checks := []struct {
+		patterns []string
+		markers  []string
+	}{
+		{
+			patterns: cloudCodePatchRoots(),
+			markers:  []string{cloudCodePatchMarker, cloudCodeGeminiRoutingMarker, cloudCodeGeminiNonStreamMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "providers", "route_specs.py"),
+			markers:  []string{cloudCodeRouteSpecsMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "providers", "cloudcode", "runtime.py"),
+			markers:  []string{cloudCodeRuntimePatchMarker},
+		},
+		{
+			patterns: cloudCodeRoutesPatchRoots(),
+			markers:  []string{cloudCodeRoutesPatchMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "proxy", "handlers", "openai.py"),
+			markers:  []string{cloudCodeStreamingPatchMarker},
+		},
+	}
+
+	for _, c := range checks {
+		seen := map[string]bool{}
+		for _, pattern := range c.patterns {
+			paths, err := filepath.Glob(pattern)
+			if err != nil {
+				continue
+			}
+			for _, path := range paths {
+				clean := filepath.Clean(path)
+				key := clean
+				if util.IsWin {
+					key = strings.ToLower(clean)
+				}
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				data, err := os.ReadFile(clean)
+				if err != nil {
+					continue
+				}
+				for _, m := range c.markers {
+					total++
+					if bytes.Contains(data, []byte(m)) {
+						applied++
+					}
+				}
+			}
+		}
+	}
+	return applied, total
+}

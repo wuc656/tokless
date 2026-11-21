@@ -40,6 +40,7 @@ func RunSelfUpdate() int {
 		return 130
 	} else if ok {
 		util.L.Raw("  " + util.C.Green(util.Sym.Check) + " tokless " + util.C.Gray("v"+local+" → v"+latest+" updated"))
+		util.L.Raw("  " + util.C.Cyan(util.Sym.Info) + " run " + util.C.Cyan("tokless proxy up") + " to apply any new Headroom patches")
 		return 0
 	}
 	return 1

@@ -12,6 +12,7 @@ import (
 
 	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/core"
+	headroompkg "github.com/HoangP8/tokless/internal/headroom"
 	toolindex "github.com/HoangP8/tokless/internal/tools"
 	"github.com/HoangP8/tokless/internal/util"
 )
@@ -316,6 +317,13 @@ func doctorProxyPorts(reports []agentReport, mainRunning bool) []doctorPort {
 		main.direct = append(main.direct, statusOK("process running"))
 	} else {
 		main.direct = append(main.direct, statusWarn("process stopped"))
+	}
+	if applied, total := headroompkg.CloudCodePatchStatus(); total > 0 {
+		if applied == total {
+			main.direct = append(main.direct, statusOK(fmt.Sprintf("Cloud Code patches %d/%d applied", applied, total)))
+		} else {
+			main.direct = append(main.direct, statusWarn(fmt.Sprintf("Cloud Code patches %d/%d applied — run tokless proxy up", applied, total)))
+		}
 	}
 	ports := []doctorPort{main}
 	hasRoutes := false

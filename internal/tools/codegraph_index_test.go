@@ -73,6 +73,25 @@ func TestRunCodegraphIndexSkipsHealthyIndex(t *testing.T) {
 	}
 }
 
+func TestRunCodegraphIndexSyncsPendingChangesOnHealthyIndex(t *testing.T) {
+	_, log := writeCodegraphIndexScript(t, "if [ \"$1\" = status ]; then echo '{\"initialized\":true,\"pendingChanges\":{\"added\":1,\"modified\":2,\"removed\":0},\"index\":{\"state\":\"complete\",\"pendingRefs\":0}}'; exit 0; fi\n[ \"$1\" = sync ] || exit 1")
+	project := t.TempDir()
+	if err := os.Mkdir(filepath.Join(project, ".codegraph"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(project, ".codegraph", "codegraph.db"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := RunCodegraphIndex(project, core.RunOpts{})
+	if err != nil || !ok {
+		t.Fatalf("RunCodegraphIndex: ok=%v err=%v", ok, err)
+	}
+	if got := readCodegraphLog(t, log); got != "status --json\nsync --quiet\n" {
+		t.Fatalf("calls = %q, want health probe and incremental sync", got)
+	}
+}
+
 func TestRunCodegraphIndexRebuildsUnhealthyIndex(t *testing.T) {
 	_, log := writeCodegraphIndexScript(t, "if [ \"$1\" = status ]; then exit 1; fi\n[ \"$1\" = index ] || exit 1")
 	project := t.TempDir()

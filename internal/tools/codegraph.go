@@ -108,12 +108,40 @@ func HasCodegraphIndex(dir string) bool {
 
 // CodegraphIndexHealthy reports if CodeGraph can open and use its index.
 func CodegraphIndexHealthy(dir string) bool {
+	healthy, _ := codegraphIndexStatus(dir)
+	return healthy
+}
+
+func parseCodegraphIndexStatus(raw string) (healthy, needsSync bool) {
+	var status struct {
+		Initialized    bool `json:"initialized"`
+		PendingChanges struct {
+			Added    int `json:"added"`
+			Modified int `json:"modified"`
+			Removed  int `json:"removed"`
+		} `json:"pendingChanges"`
+		Index struct {
+			State               string `json:"state"`
+			PendingRefs         int    `json:"pendingRefs"`
+			ReindexRecommended  bool   `json:"reindexRecommended"`
+			FilesNeedingReindex int    `json:"filesNeedingReindex"`
+		} `json:"index"`
+	}
+	if json.Unmarshal([]byte(raw), &status) != nil {
+		return false, false
+	}
+	healthy = status.Initialized && !status.Index.ReindexRecommended && status.Index.State == "complete" && status.Index.PendingRefs == 0
+	needsSync = status.PendingChanges.Added > 0 || status.PendingChanges.Modified > 0 || status.PendingChanges.Removed > 0 || status.Index.FilesNeedingReindex > 0
+	return healthy, needsSync
+}
+
+func codegraphIndexStatus(dir string) (healthy, needsSync bool) {
 	if !HasCodegraphIndex(dir) {
-		return false
+		return false, false
 	}
 	command, args, ok := resolveCodegraphCommand("status", "--json")
 	if !ok {
-		return false
+		return false, false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -124,23 +152,13 @@ func CodegraphIndexHealthy(dir string) bool {
 		Env:     []string{"CODEGRAPH_DIR="},
 	})
 	if result.Code != 0 {
-		return false
+		return false, false
 	}
-	var status struct {
-		Initialized bool `json:"initialized"`
-		Index       struct {
-			State              string `json:"state"`
-			PendingRefs        int    `json:"pendingRefs"`
-			ReindexRecommended bool   `json:"reindexRecommended"`
-		} `json:"index"`
-	}
-	if json.Unmarshal([]byte(result.Stdout), &status) != nil {
-		return false
-	}
-	return status.Initialized && !status.Index.ReindexRecommended && status.Index.State == "complete" && status.Index.PendingRefs == 0
+	return parseCodegraphIndexStatus(result.Stdout)
 }
 
-// RunCodegraphIndex initializes missing or rebuilds unusable CodeGraph indexes.
+// RunCodegraphIndex initializes missing, syncs pending changes on healthy indexes,
+// or rebuilds unusable CodeGraph indexes.
 func RunCodegraphIndex(dir string, opts core.RunOpts) (bool, error) {
 	codegraphIndexMu.Lock()
 	defer codegraphIndexMu.Unlock()
@@ -155,8 +173,13 @@ func RunCodegraphIndex(dir string, opts core.RunOpts) (bool, error) {
 		util.L.Sub("[dry-run] would run codegraph in " + dir)
 		return true, nil
 	}
-	if CodegraphIndexHealthy(dir) {
-		return true, nil
+	if healthy, needsSync := codegraphIndexStatus(dir); healthy {
+		if !needsSync {
+			return true, nil
+		}
+		if ok, _ := SyncCodegraphIndex(dir, opts); ok || CodegraphIndexHealthy(dir) {
+			return true, nil
+		}
 	}
 	if HasCodegraphIndex(dir) {
 		ok, err := RebuildCodegraphIndex(dir, opts)
@@ -170,6 +193,36 @@ func RunCodegraphIndex(dir string, opts core.RunOpts) (bool, error) {
 		return true, nil
 	}
 	return ok, err
+}
+
+// SyncCodegraphIndex incrementally syncs added/modified/removed files on an existing healthy index.
+func SyncCodegraphIndex(dir string, opts core.RunOpts) (bool, error) {
+	if isTest() {
+		return true, nil
+	}
+	if _, _, ok := resolveCodegraphCommand(); !ok {
+		return false, fmt.Errorf("codegraph executable not found")
+	}
+	if opts.DryRun {
+		util.L.Sub("[dry-run] would sync codegraph in " + dir)
+		return true, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), codegraphIndexTimeout)
+	defer cancel()
+	command, args, _ := resolveCodegraphCommand("sync", "--quiet")
+	result := util.Run(command, args, util.RunOptions{
+		Cwd:     dir,
+		Capture: true,
+		Ctx:     ctx,
+		Env:     []string{"CODEGRAPH_DIR="},
+	})
+	if result.Code != 0 {
+		if ctx.Err() != nil {
+			return false, fmt.Errorf("codegraph sync failed: timed out")
+		}
+		return false, fmt.Errorf("codegraph sync failed%s", codegraphFailure(result.Stderr))
+	}
+	return true, nil
 }
 
 // RebuildCodegraphIndex replaces an unusable existing index with a fresh one.

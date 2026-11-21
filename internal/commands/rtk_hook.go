@@ -148,7 +148,78 @@ func rtkRewrite(cmdLine string) (string, bool) {
 	if newCmd, changed := rtkRewriteDirect(cmdLine); changed {
 		return newCmd, true
 	}
-	return rtkRewritePowerShellWrapper(cmdLine)
+	if newCmd, changed := rtkRewritePowerShellWrapper(cmdLine); changed {
+		return newCmd, true
+	}
+	return rtkRewriteCmdWrapper(cmdLine)
+}
+
+// rtkRewriteCmdWrapper unwraps single-command `cmd /c "..."` / `cmd.exe /d /s /c "..."`
+// invocations on Windows so cmd-wrapped agent commands benefit from RTK compression.
+func rtkRewriteCmdWrapper(cmdLine string) (string, bool) {
+	trimmed := strings.TrimSpace(cmdLine)
+	if trimmed == "" || strings.ContainsAny(trimmed, "\r\n") {
+		return "", false
+	}
+	pos := 0
+	nextTok := func() (tok string, ok bool) {
+		for pos < len(trimmed) && (trimmed[pos] == ' ' || trimmed[pos] == '\t') {
+			pos++
+		}
+		if pos >= len(trimmed) {
+			return "", false
+		}
+		start := pos
+		for pos < len(trimmed) && trimmed[pos] != ' ' && trimmed[pos] != '\t' {
+			pos++
+		}
+		return trimmed[start:pos], true
+	}
+
+	bin, ok := nextTok()
+	if !ok {
+		return "", false
+	}
+	switch strings.ToLower(bin) {
+	case "cmd", "cmd.exe":
+	default:
+		return "", false
+	}
+
+	foundC := false
+	for {
+		tok, ok := nextTok()
+		if !ok {
+			return "", false
+		}
+		switch strings.ToLower(tok) {
+		case "/d", "/s", "/q":
+			continue
+		case "/c":
+			foundC = true
+		default:
+			return "", false
+		}
+		if foundC {
+			break
+		}
+	}
+
+	for pos < len(trimmed) && (trimmed[pos] == ' ' || trimmed[pos] == '\t') {
+		pos++
+	}
+	if pos >= len(trimmed) || trimmed[pos] != '"' || len(trimmed)-pos < 2 || trimmed[len(trimmed)-1] != '"' {
+		return "", false
+	}
+	inner := trimmed[pos+1 : len(trimmed)-1]
+	if inner == "" || strings.ContainsAny(inner, `"%!^`) {
+		return "", false
+	}
+	rewritten, changed := rtkRewrite(inner)
+	if !changed || strings.IndexByte(rewritten, '"') >= 0 {
+		return "", false
+	}
+	return trimmed[:pos+1] + rewritten + `"`, true
 }
 
 // rtkRewritePowerShellWrapper unwraps single-command `pwsh`/`powershell -Command "..."`

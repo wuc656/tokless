@@ -80,6 +80,10 @@ func parsePerf(raw string) (perfData, error) {
 	return data, err
 }
 
+func contextModeV2ProjectsDir(home string) string {
+	return filepath.Join(home, ".context-mode", "projects")
+}
+
 func contextModeStoreStats(home string) string {
 	root := filepath.Join(home, ".config", "opencode", "context-mode")
 	if util.IsWin {
@@ -91,7 +95,7 @@ func contextModeStoreStats(home string) string {
 	}
 	count := 0
 	var size int64
-	for _, dir := range []string{filepath.Join(root, "sessions"), filepath.Join(root, "content")} {
+	for _, dir := range []string{filepath.Join(root, "sessions"), filepath.Join(root, "content"), contextModeV2ProjectsDir(home)} {
 		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
@@ -365,6 +369,68 @@ func contextModeStats(home string) []string {
 	rows := []string{contextModeStoreStats(home)}
 	if side := contextModeSidecarStats(filepath.Join(root, "sessions")); side != "" {
 		rows = append(rows, strings.Split(side, " | ")...)
+	} else if v2Rows := contextModeV2SQLiteStats(home); len(v2Rows) > 0 {
+		rows = append(rows, v2Rows...)
+	}
+	return rows
+}
+
+const contextModeV2StatsScript = `const {DatabaseSync}=require("node:sqlite"),fs=require("node:fs"),path=require("node:path"),root=process.argv[1];` +
+	`let calls=0,produced=0,returned=0,sources=0,chunks=0,bytes=0;` +
+	`for(const d of fs.readdirSync(root)){` +
+	`const p=path.join(root,d,"context.db");if(!fs.existsSync(p))continue;let db;` +
+	`try{db=new DatabaseSync(p,{readOnly:true});` +
+	`const ev=db.prepare("SELECT COUNT(*) AS calls, COALESCE(SUM(sandbox_bytes),0) AS produced, COALESCE(SUM(returned_bytes),0) AS returned FROM events WHERE tool IS NOT NULL AND kind <> 'cost' AND tool <> 'ctx_stats'").get();` +
+	`const sr=db.prepare("SELECT COUNT(*) AS sources, COALESCE(SUM(chunk_count),0) AS chunks, COALESCE(SUM(bytes_total),0) AS bytes FROM sources").get();` +
+	`calls+=Number(ev.calls||0);produced+=Number(ev.produced||0);returned+=Number(ev.returned||0);` +
+	`sources+=Number(sr.sources||0);chunks+=Number(sr.chunks||0);bytes+=Number(sr.bytes||0);` +
+	`}catch{}finally{try{if(db)db.close();}catch{}}` +
+	`}` +
+	`console.log(JSON.stringify({calls,produced,returned,sources,chunks,bytes}));`
+
+func contextModeV2SQLiteStats(home string) []string {
+	projectsDir := contextModeV2ProjectsDir(home)
+	if !util.Exists(projectsDir) {
+		return nil
+	}
+	nodeBin := util.ResolveNodeBinary()
+	if nodeBin == "" {
+		return nil
+	}
+	out, err := runDoctorCommandTimeout(3*time.Second, nodeBin, "-e", contextModeV2StatsScript, projectsDir)
+	if err != nil || out == "" {
+		return nil
+	}
+	return formatContextModeV2Stats(out)
+}
+
+func formatContextModeV2Stats(raw string) []string {
+	var data struct {
+		Calls    int64 `json:"calls"`
+		Produced int64 `json:"produced"`
+		Returned int64 `json:"returned"`
+		Sources  int64 `json:"sources"`
+		Chunks   int64 `json:"chunks"`
+		Bytes    int64 `json:"bytes"`
+	}
+	if json.Unmarshal([]byte(raw), &data) != nil {
+		return nil
+	}
+	var rows []string
+	if data.Calls > 0 {
+		savedBytes := data.Produced - data.Returned
+		if savedBytes < 0 {
+			savedBytes = 0
+		}
+		tokensSaved := savedBytes / 4
+		pct := 0.0
+		if data.Produced > 0 {
+			pct = float64(savedBytes) * 100 / float64(data.Produced)
+		}
+		rows = append(rows, fmt.Sprintf("lifetime: %s calls, ~%s tokens saved (%.1f%% reduction)", humanCount(data.Calls), humanCount(tokensSaved), pct))
+	}
+	if data.Sources > 0 {
+		rows = append(rows, fmt.Sprintf("indexed: %s sources, %s chunks (%s bytes)", humanCount(data.Sources), humanCount(data.Chunks), humanCount(data.Bytes)))
 	}
 	return rows
 }

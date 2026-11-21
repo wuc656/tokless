@@ -284,6 +284,29 @@ func TestDoctorContextModeStoreStatsCountsOnlyDBFiles(t *testing.T) {
 	if got := contextModeStoreStats(home); got != "store 2 DBs, 0.0 MB" {
 		t.Fatalf("store stats = %q", got)
 	}
+	v2Proj := filepath.Join(home, ".context-mode", "projects", "ced9943256ff5d00")
+	if err := os.MkdirAll(v2Proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(v2Proj, "context.db"), []byte("12345678"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(v2Proj, "context.db-wal"), []byte("1234"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := contextModeStoreStats(home); got != "store 3 DBs, 0.0 MB" {
+		t.Fatalf("store stats with v2 project = %q", got)
+	}
+}
+
+func TestFormatContextModeV2Stats(t *testing.T) {
+	rows := formatContextModeV2Stats(`{"calls":401,"produced":1897279,"returned":1110350,"sources":127,"chunks":760,"bytes":1197517}`)
+	joined := strings.Join(rows, "\n")
+	for _, want := range []string{"lifetime: 401 calls", "~196.7K tokens saved", "41.5% reduction", "indexed: 127 sources, 760 chunks (1.2M bytes)"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("v2 stats missing %q: %s", want, joined)
+		}
+	}
 }
 
 func TestDoctorContextModeSidecarStats(t *testing.T) {

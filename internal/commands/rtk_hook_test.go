@@ -1450,3 +1450,51 @@ func TestRtkRewritePowerShellWrapper(t *testing.T) {
 		})
 	}
 }
+
+func TestRtkRewriteCmdWrapper(t *testing.T) {
+	orig := rtkRewriteDirect
+	rtkRewriteDirect = func(cmdLine string) (string, bool) {
+		lower := strings.ToLower(cmdLine)
+		if strings.HasPrefix(lower, "cmd") {
+			return "", false
+		}
+		return "rtk " + cmdLine, true
+	}
+	t.Cleanup(func() { rtkRewriteDirect = orig })
+	for _, tc := range []struct {
+		name        string
+		cmd         string
+		want        string
+		wantChanged bool
+	}{
+		{
+			name:        "cmd /c double quoted",
+			cmd:         `cmd /c "git status"`,
+			want:        `cmd /c "rtk git status"`,
+			wantChanged: true,
+		},
+		{
+			name:        "cmd.exe /d /s /c double quoted",
+			cmd:         `cmd.exe /d /s /c "go test ./..."`,
+			want:        `cmd.exe /d /s /c "rtk go test ./..."`,
+			wantChanged: true,
+		},
+		{
+			name:        "skips cmd variable expansion",
+			cmd:         `cmd /c "echo %USERPROFILE%"`,
+			wantChanged: false,
+		},
+		{
+			name:        "skips inner pipe",
+			cmd:         `cmd /c "git status | findstr main"`,
+			wantChanged: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, changed := rtkRewrite(tc.cmd)
+			if changed != tc.wantChanged || (tc.wantChanged && got != tc.want) {
+				t.Fatalf("rtkRewrite(%q) = (%q, %v), want (%q, %v)", tc.cmd, got, changed, tc.want, tc.wantChanged)
+			}
+		})
+	}
+}

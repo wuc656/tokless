@@ -10,13 +10,17 @@ import (
 )
 
 const (
-	cloudCodePatchMarker           = "gemini:tool_schema_compaction"
-	cloudCodeGeminiRoutingMarker   = "tokless:antigravity_routing_v1"
-	cloudCodeGeminiNonStreamMarker = "tokless:cloudcode_generate_v1"
-	cloudCodeRouteSpecsMarker      = "handle_google_cloudcode_generate"
-	cloudCodeRuntimePatchMarker    = "CLOUDCODE_INTERNAL_SLASH_PREFIX"
-	cloudCodeRoutesPatchMarker     = "tokless:cloudcode_routes_v3"
-	cloudCodeStreamingPatchMarker  = "tokless:binary_streaming_passthrough_v1"
+	cloudCodePatchMarker            = "gemini:tool_schema_compaction"
+	cloudCodeGeminiRoutingMarker    = "tokless:antigravity_routing_v1"
+	cloudCodeGeminiNonStreamMarker  = "tokless:cloudcode_generate_v1"
+	cloudCodeGeminiFRLosslessMarker = "gemini:fr_lossless_compaction"
+	cloudCodeRouteSpecsMarker       = "handle_google_cloudcode_generate"
+	cloudCodeRuntimePatchMarker     = "CLOUDCODE_INTERNAL_SLASH_PREFIX"
+	cloudCodeRoutesPatchMarker      = "tokless:cloudcode_routes_v3"
+	cloudCodeStreamingPatchMarker   = "tokless:binary_streaming_passthrough_v1"
+	cloudCodeLosslessWindowsMarker  = "tokless:lossless_windows_backslash_v1"
+	cloudCodePrefixTrackerMarker    = "tokless:restore_frozen_prefix_v1"
+	cloudCodeSmartCrusherMarker     = "tokless:smart_crusher_minify_guard_v1"
 )
 
 func cloudCodePatchRootsFor(rel ...string) []string {
@@ -201,6 +205,50 @@ func patchCloudCodeStreamingPassthrough(path string) (bool, error) {
 	})
 }
 
+func patchCloudCodeGeminiFRLossless(path string) (bool, error) {
+	old := []byte("            if optimized_system:\n                request_payload[\"systemInstruction\"] = optimized_system\n\n        if not _decision.bypass_header_set and isinstance(tools_before, list) and tools_before:\n")
+	new := []byte("            if optimized_system:\n                request_payload[\"systemInstruction\"] = optimized_system\n\n        _fr_before = _fr_after = _fr_leaves = 0\n        if _decision.should_compress and isinstance(contents, list):\n            try:\n                from headroom.transforms.lossless_compaction import compact_lossless\n\n                try:\n                    from headroom._core import minify_json as _fr_minify_json\n                except Exception:\n                    _fr_minify_json = None\n\n                def _compact_fr_str(s: str) -> str:\n                    if len(s) < 120:\n                        return s\n                    best = s\n                    stripped = s.lstrip()\n                    if _fr_minify_json is not None and stripped.startswith((\"{\", \"[\")):\n                        try:\n                            m = _fr_minify_json(s)\n                            if isinstance(m, str) and 0 < len(m) < len(best):\n                                best = m\n                        except Exception:\n                            pass\n                    for _kind in (\"search\", \"diff\", \"log\", \"text\"):\n                        c = compact_lossless(best, _kind)\n                        if isinstance(c, str) and 0 < len(c) < len(best):\n                            best = c\n                    return best\n\n                def _walk_fr(val: Any) -> Any:\n                    nonlocal _fr_before, _fr_after, _fr_leaves\n                    if isinstance(val, dict):\n                        for _k, _v in val.items():\n                            val[_k] = _walk_fr(_v)\n                        return val\n                    if isinstance(val, list):\n                        for _i, _v in enumerate(val):\n                            val[_i] = _walk_fr(_v)\n                        return val\n                    if isinstance(val, str) and len(val) >= 120:\n                        _cand = _compact_fr_str(val)\n                        if _cand != val and len(_cand) < len(val):\n                            _tb = tokenizer.count_text(val)\n                            _ta = tokenizer.count_text(_cand)\n                            if 0 < _ta < _tb:\n                                _fr_before += _tb\n                                _fr_after += _ta\n                                _fr_leaves += 1\n                                return _cand\n                    return val\n\n                _target_contents = request_payload.get(\"contents\")\n                if not isinstance(_target_contents, list):\n                    _target_contents = contents\n                for _c_entry in _target_contents:\n                    if not isinstance(_c_entry, dict):\n                        continue\n                    _c_parts = _c_entry.get(\"parts\")\n                    if not isinstance(_c_parts, list):\n                        continue\n                    for _c_part in _c_parts:\n                        if not isinstance(_c_part, dict):\n                            continue\n                        _fr = _c_part.get(\"functionResponse\")\n                        if isinstance(_fr, dict) and _fr.get(\"response\") is not None:\n                            _fr[\"response\"] = _walk_fr(_fr[\"response\"])\n                if _fr_leaves > 0:\n                    request_payload[\"contents\"] = _target_contents\n            except Exception:\n                logger.debug(\"Cloud Code functionResponse lossless compaction skipped\", exc_info=True)\n        if 0 < _fr_after < _fr_before:\n            original_tokens += _fr_before\n            optimized_tokens += _fr_after\n            transforms_applied.append(\"" + cloudCodeGeminiFRLosslessMarker + "\")\n\n        if not _decision.bypass_header_set and isinstance(tools_before, list) and tools_before:\n")
+
+	return applyAtomicReplacements(path, cloudCodeGeminiFRLosslessMarker, []patchReplacement{
+		{old, new},
+	})
+}
+
+func patchCloudCodeLosslessWindows(path string) (bool, error) {
+	oldTS := []byte("_TIMESTAMP_ROW_RE = re.compile(\n    r\"^\\s*\\[?(?:\"\n    r\"\\d{4}-\\d{2}-\\d{2}[ T]\\d{1,2}:\\d{2}\"  # 2026-09-02 14:30 / ISO 8601 'T'\n    r\"|\\d{2}/\\d{2}/\\d{2,4}[ T]\\d{1,2}:\\d{2}\"  # 09/02/2026 14:30\n    r\"|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{1,2}:\\d{2}\"  # syslog: Aug 16 11:02\n    r\"|\\d{1,2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:\\s|\\]|$)\"  # bare 15:03:53 / [15:03:53]\n    r\")\"\n)\n")
+	newTS := []byte("_TIMESTAMP_ROW_RE = re.compile(\n    r\"^\\s*\\[?(?:\"\n    r\"\\d{4}-\\d{2}-\\d{2}[ T]\\d{1,2}:\\d{2}\"  # 2026-09-02 14:30 / ISO 8601 'T'\n    r\"|\\d{4}/\\d{2}/\\d{2}[ T]\\d{1,2}:\\d{2}\"  # Go log, nginx error log: 2026/09/02 14:30\n    r\"|\\d{2}/\\d{2}/\\d{2,4}[ T]\\d{1,2}:\\d{2}\"  # 09/02/2026 14:30\n    r\"|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{1,2}:\\d{2}\"  # syslog: Aug 16 11:02\n    r\"|[A-Z][a-z]{2} [A-Z][a-z]{2}\\s+\\d{1,2} \\d{2}:\\d{2}\"  # ctime, Apache error log\n    r\"|\\d{2}-[A-Z][a-z]{2}-\\d{4} \\d{2}:\\d{2}\"  # Tomcat OneLineFormatter\n    r\"|[IWEF]\\d{4}\\s+\\d{1,2}:\\d{2}\"  # klog/glog: E0902 14:30\n    r\"|[DIWEFA], \\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}\"  # Ruby Logger\n    r\"|\\d{1,2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:\\s|\\]|$)\"  # bare 15:03:53 / [15:03:53]\n    r\")\"\n)\n")
+
+	oldDir := []byte("def search_dir_heading(text: str) -> str:\n    \"\"\"Fold grep ``path:line:content`` rows by DIRECTORY.\n\n    Consecutive rows whose path shares a parent directory collapse to that\n    directory once (a header ending in ``/``), then ``base:line:content`` rows\n    beneath it. Complements :func:`search_heading` (which factors a repeated\n    *file*): this factors a repeated *directory* across distinct files — the\n    common ``grep -rn`` case where each file has a single match, so file-heading\n    saves nothing but the shared directory repeats on every row. Rows whose path\n    has no ``/`` pass through untouched. Exactly reversed by\n    :func:`search_dir_unheading`; ``compact_lossless`` verifies the round-trip.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    for line in lines:\n        m = None if _TIMESTAMP_ROW_RE.match(line) else _GREP_ROW_RE.match(line)\n        if m and \"/\" in m.group(\"path\"):\n            path = m.group(\"path\")\n            cut = path.rindex(\"/\") + 1\n            dir_part, base = path[:cut], path[cut:]\n            if dir_part != current_dir:\n                out.append(dir_part)\n                current_dir = dir_part\n            out.append(f\"{base}:{m.group('line')}:{m.group('content')}\")\n        else:\n            out.append(line)\n            current_dir = None\n    return _join(out, had_trailing)\n\n\ndef search_dir_unheading(text: str) -> str:\n    \"\"\"Exact inverse of :func:`search_dir_heading`.\n\n    A *header* is a line ending in ``/`` immediately followed by a\n    ``base:line:content`` data row; it is consumed and re-prefixed onto each\n    following data row until a non-data line appears.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    n = len(lines)\n    i = 0\n    while i < n:\n        line = lines[i]\n        data = _DIR_DATA_RE.match(line)\n        if current_dir is not None and data:\n            out.append(f\"{current_dir}{line}\")\n            i += 1\n            continue\n        if line.endswith(\"/\") and i + 1 < n and _DIR_DATA_RE.match(lines[i + 1]):\n            current_dir = line\n            i += 1\n            continue\n        current_dir = None\n        out.append(line)\n        i += 1\n    return _join(out, had_trailing)\n")
+	newDir := []byte("def search_dir_heading(text: str, *, backslash: bool = False) -> str:\n    \"\"\"Fold grep ``path:line:content`` rows by DIRECTORY (" + cloudCodeLosslessWindowsMarker + ").\"\"\"\n    separators = \"/\\\\\" if backslash else \"/\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    for line in lines:\n        m = None if _TIMESTAMP_ROW_RE.match(line) else _GREP_ROW_RE.match(line)\n        path = m.group(\"path\") if m else \"\"\n        cut = max(path.rfind(sep) for sep in separators) + 1\n        if m and cut:\n            dir_part, base = path[:cut], path[cut:]\n            if dir_part != current_dir:\n                out.append(dir_part)\n                current_dir = dir_part\n            out.append(f\"{base}:{m.group('line')}:{m.group('content')}\")\n        else:\n            out.append(line)\n            current_dir = None\n    return _join(out, had_trailing)\n\n\ndef search_dir_unheading(text: str, *, backslash: bool = False) -> str:\n    \"\"\"Exact inverse of :func:`search_dir_heading`.\"\"\"\n    header_ends = (\"/\", \"\\\\\") if backslash else (\"/\",)\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    n = len(lines)\n    i = 0\n    while i < n:\n        line = lines[i]\n        data = _DIR_DATA_RE.match(line)\n        if current_dir is not None and data:\n            out.append(f\"{current_dir}{line}\")\n            i += 1\n            continue\n        if line.endswith(header_ends) and i + 1 < n and _DIR_DATA_RE.match(lines[i + 1]):\n            current_dir = line\n            i += 1\n            continue\n        current_dir = None\n        out.append(line)\n        i += 1\n    return _join(out, had_trailing)\n")
+
+	oldSearch := []byte("        if kind == \"search\":\n            # Two independent folds; keep the smaller that round-trips exactly.\n            # search_heading factors a repeated FILE (many matches in one file);\n            # search_dir_heading factors a repeated DIRECTORY (one match each\n            # across many files in a dir — the grep -rn case the file fold misses).\n            best = content\n            for candidate, inverse in (\n                (search_heading(content), search_unheading),\n                (search_dir_heading(content), search_dir_unheading),\n            ):\n                if inverse(candidate) == content and _smaller(candidate, best):\n                    best = candidate\n            return best\n")
+	newSearch := []byte("        if kind == \"search\":\n            folds = [\n                (search_heading(content), search_unheading),\n                (search_dir_heading(content), search_dir_unheading),\n            ]\n            if \"\\\\\" in content:\n                folds.append(\n                    (\n                        search_dir_heading(content, backslash=True),\n                        lambda s: search_dir_unheading(s, backslash=True),\n                    )\n                )\n            best = content\n            for candidate, inverse in folds:\n                if inverse(candidate) == content and _smaller(candidate, best):\n                    best = candidate\n            return best\n")
+
+	return applyAtomicReplacements(path, cloudCodeLosslessWindowsMarker, []patchReplacement{
+		{oldTS, newTS},
+		{oldDir, newDir},
+		{oldSearch, newSearch},
+	})
+}
+
+func patchCloudCodePrefixTracker(path string) (bool, error) {
+	old := []byte("    # Defensive: if a transform dropped prefix messages, restore them.\n    if len(restored) < frozen:\n        return list(original_messages[:frozen]) + restored, frozen\n")
+	new := []byte("    # " + cloudCodePrefixTrackerMarker + "\n    if len(restored) < len(original_messages):\n        frozen_originals = original_messages[:frozen]\n        live: list[dict[str, Any]] = []\n        frozen_idx = 0\n        for message in restored:\n            if frozen_idx < frozen and _canonicalize_for_prefix_compare(\n                message\n            ) == _canonicalize_for_prefix_compare(frozen_originals[frozen_idx]):\n                frozen_idx += 1\n                continue\n            live.append(message)\n        return list(frozen_originals) + live, frozen\n")
+
+	return applyAtomicReplacements(path, cloudCodePrefixTrackerMarker, []patchReplacement{
+		{old, new},
+	})
+}
+
+func patchCloudCodeSmartCrusherMinify(path string) (bool, error) {
+	old := []byte("                            if compressed == content:\n                                from headroom._core import minify_json\n\n                                minified = minify_json(content)\n                                if minified is not None:\n")
+	new := []byte("                            if compressed == content:\n                                from headroom._core import minify_json\n\n                                # " + cloudCodeSmartCrusherMarker + "\n                                try:\n                                    minified = minify_json(content)\n                                except ValueError as exc:\n                                    logger.debug(\"JSON minify skipped: %s\", exc)\n                                    minified = None\n                                if minified is not None:\n")
+
+	return applyAtomicReplacements(path, cloudCodeSmartCrusherMarker, []patchReplacement{
+		{old, new},
+	})
+}
+
 func applyPatchToRoots(patterns []string, label string, patchFns ...func(string) (bool, error)) bool {
 	changed := false
 	seen := map[string]bool{}
@@ -243,6 +291,7 @@ func applyCloudCodePatch() bool {
 		patchCloudCodeGemini,
 		patchCloudCodeGeminiRouting,
 		patchCloudCodeGeminiNonStream,
+		patchCloudCodeGeminiFRLossless,
 	)
 	changed = applyPatchToRoots(
 		cloudCodePatchRootsFor("headroom", "providers", "route_specs.py"),
@@ -264,6 +313,21 @@ func applyCloudCodePatch() bool {
 		"Cloud Code streaming",
 		patchCloudCodeStreamingPassthrough,
 	) || changed
+	changed = applyPatchToRoots(
+		cloudCodePatchRootsFor("headroom", "transforms", "lossless_compaction.py"),
+		"Lossless Windows backslash fold",
+		patchCloudCodeLosslessWindows,
+	) || changed
+	changed = applyPatchToRoots(
+		cloudCodePatchRootsFor("headroom", "cache", "prefix_tracker.py"),
+		"Prefix tracker frozen restore",
+		patchCloudCodePrefixTracker,
+	) || changed
+	changed = applyPatchToRoots(
+		cloudCodePatchRootsFor("headroom", "transforms", "content_router.py"),
+		"SmartCrusher JSON minify guard",
+		patchCloudCodeSmartCrusherMinify,
+	) || changed
 	return changed
 }
 
@@ -279,7 +343,7 @@ func CloudCodePatchStatus() (applied, total int) {
 	}{
 		{
 			patterns: cloudCodePatchRoots(),
-			markers:  []string{cloudCodePatchMarker, cloudCodeGeminiRoutingMarker, cloudCodeGeminiNonStreamMarker},
+			markers:  []string{cloudCodePatchMarker, cloudCodeGeminiRoutingMarker, cloudCodeGeminiNonStreamMarker, cloudCodeGeminiFRLosslessMarker},
 		},
 		{
 			patterns: cloudCodePatchRootsFor("headroom", "providers", "route_specs.py"),
@@ -296,6 +360,18 @@ func CloudCodePatchStatus() (applied, total int) {
 		{
 			patterns: cloudCodePatchRootsFor("headroom", "proxy", "handlers", "openai.py"),
 			markers:  []string{cloudCodeStreamingPatchMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "transforms", "lossless_compaction.py"),
+			markers:  []string{cloudCodeLosslessWindowsMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "cache", "prefix_tracker.py"),
+			markers:  []string{cloudCodePrefixTrackerMarker},
+		},
+		{
+			patterns: cloudCodePatchRootsFor("headroom", "transforms", "content_router.py"),
+			markers:  []string{cloudCodeSmartCrusherMarker},
 		},
 	}
 

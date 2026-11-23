@@ -184,6 +184,9 @@ func proxyDaemonEnv() []string {
 	if allowed := headroomAllowedBaseURLs(); allowed != "" {
 		out = append(out, "HEADROOM_ALLOWED_BASE_URLS="+allowed)
 	}
+	if _, set := os.LookupEnv("HEADROOM_OPENAI_WS_PROPAGATE_UPSTREAM_CLOSE"); !set {
+		out = append(out, "HEADROOM_OPENAI_WS_PROPAGATE_UPSTREAM_CLOSE=1")
+	}
 	out = append(out, headroomDarwinMallocEnv()...)
 	return out
 }

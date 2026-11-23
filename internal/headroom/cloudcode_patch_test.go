@@ -476,7 +476,10 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 	runtimePath := filepath.Join(site, "headroom", "providers", "cloudcode", "runtime.py")
 	routesPath := filepath.Join(site, "headroom", "providers", "proxy_routes.py")
 	openaiPath := filepath.Join(site, "headroom", "proxy", "handlers", "openai.py")
-	for _, p := range []string{geminiPath, routeSpecsPath, runtimePath, routesPath, openaiPath} {
+	losslessPath := filepath.Join(site, "headroom", "transforms", "lossless_compaction.py")
+	prefixPath := filepath.Join(site, "headroom", "cache", "prefix_tracker.py")
+	routerPath := filepath.Join(site, "headroom", "transforms", "content_router.py")
+	for _, p := range []string{geminiPath, routeSpecsPath, runtimePath, routesPath, openaiPath, losslessPath, prefixPath, routerPath} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -484,6 +487,9 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 
 	runtimeSrc := "CLOUDCODE_INTERNAL_PREFIX = \"v1internal:\"\nCLOUDCODE_VERSIONED_INTERNAL_PREFIX = \"v1/v1internal:\"\n\n\ndef normalize_cloudcode_passthrough_path(path: str) -> str | None:\n    \"\"\"Return the canonical Cloud Code internal path, or ``None`` when unrelated.\"\"\"\n    clean_path = path.lstrip(\"/\")\n    if not clean_path.startswith((CLOUDCODE_INTERNAL_PREFIX, CLOUDCODE_VERSIONED_INTERNAL_PREFIX)):\n        return None\n    if clean_path.startswith(\"v1/\"):\n        clean_path = clean_path[3:]\n    return f\"/{clean_path}\"\n"
 	routesSrc := "        normalized_cloudcode_path = normalize_cloudcode_passthrough_path(path)\n        if normalized_cloudcode_path is not None:\n            normalize_request_path(request, normalized_cloudcode_path)\n\n            return await proxy.handle_passthrough(\n                request,\n                _api_target(proxy, \"cloudcode\"),\n            )\n"
+	losslessSrc := "_TIMESTAMP_ROW_RE = re.compile(\n    r\"^\\s*\\[?(?:\"\n    r\"\\d{4}-\\d{2}-\\d{2}[ T]\\d{1,2}:\\d{2}\"  # 2026-09-02 14:30 / ISO 8601 'T'\n    r\"|\\d{2}/\\d{2}/\\d{2,4}[ T]\\d{1,2}:\\d{2}\"  # 09/02/2026 14:30\n    r\"|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{1,2}:\\d{2}\"  # syslog: Aug 16 11:02\n    r\"|\\d{1,2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:\\s|\\]|$)\"  # bare 15:03:53 / [15:03:53]\n    r\")\"\n)\n\ndef search_dir_heading(text: str) -> str:\n    \"\"\"Fold grep ``path:line:content`` rows by DIRECTORY.\n\n    Consecutive rows whose path shares a parent directory collapse to that\n    directory once (a header ending in ``/``), then ``base:line:content`` rows\n    beneath it. Complements :func:`search_heading` (which factors a repeated\n    *file*): this factors a repeated *directory* across distinct files — the\n    common ``grep -rn`` case where each file has a single match, so file-heading\n    saves nothing but the shared directory repeats on every row. Rows whose path\n    has no ``/`` pass through untouched. Exactly reversed by\n    :func:`search_dir_unheading`; ``compact_lossless`` verifies the round-trip.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    for line in lines:\n        m = None if _TIMESTAMP_ROW_RE.match(line) else _GREP_ROW_RE.match(line)\n        if m and \"/\" in m.group(\"path\"):\n            path = m.group(\"path\")\n            cut = path.rindex(\"/\") + 1\n            dir_part, base = path[:cut], path[cut:]\n            if dir_part != current_dir:\n                out.append(dir_part)\n                current_dir = dir_part\n            out.append(f\"{base}:{m.group('line')}:{m.group('content')}\")\n        else:\n            out.append(line)\n            current_dir = None\n    return _join(out, had_trailing)\n\n\ndef search_dir_unheading(text: str) -> str:\n    \"\"\"Exact inverse of :func:`search_dir_heading`.\n\n    A *header* is a line ending in ``/`` immediately followed by a\n    ``base:line:content`` data row; it is consumed and re-prefixed onto each\n    following data row until a non-data line appears.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    n = len(lines)\n    i = 0\n    while i < n:\n        line = lines[i]\n        data = _DIR_DATA_RE.match(line)\n        if current_dir is not None and data:\n            out.append(f\"{current_dir}{line}\")\n            i += 1\n            continue\n        if line.endswith(\"/\") and i + 1 < n and _DIR_DATA_RE.match(lines[i + 1]):\n            current_dir = line\n            i += 1\n            continue\n        current_dir = None\n        out.append(line)\n        i += 1\n    return _join(out, had_trailing)\n\n        if kind == \"search\":\n            # Two independent folds; keep the smaller that round-trips exactly.\n            # search_heading factors a repeated FILE (many matches in one file);\n            # search_dir_heading factors a repeated DIRECTORY (one match each\n            # across many files in a dir — the grep -rn case the file fold misses).\n            best = content\n            for candidate, inverse in (\n                (search_heading(content), search_unheading),\n                (search_dir_heading(content), search_dir_unheading),\n            ):\n                if inverse(candidate) == content and _smaller(candidate, best):\n                    best = candidate\n            return best\n"
+	prefixSrc := "    # Defensive: if a transform dropped prefix messages, restore them.\n    if len(restored) < frozen:\n        return list(original_messages[:frozen]) + restored, frozen\n"
+	routerSrc := "                            if compressed == content:\n                                from headroom._core import minify_json\n\n                                minified = minify_json(content)\n                                if minified is not None:\n"
 
 	for _, f := range []struct {
 		path string
@@ -494,6 +500,9 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 		{runtimePath, runtimeSrc},
 		{routesPath, routesSrc},
 		{openaiPath, testCloudCodeOpenAIFixture},
+		{losslessPath, losslessSrc},
+		{prefixPath, prefixSrc},
+		{routerPath, routerSrc},
 	} {
 		if err := os.WriteFile(f.path, []byte(f.body), 0o600); err != nil {
 			t.Fatal(err)
@@ -503,8 +512,8 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 	if !applyCloudCodePatch() {
 		t.Fatal("expected applyCloudCodePatch to patch files under Roaming uv tools dir")
 	}
-	if applied, total := CloudCodePatchStatus(); total != 7 || applied != 7 {
-		t.Fatalf("CloudCodePatchStatus() = (%d, %d), want (7, 7)", applied, total)
+	if applied, total := CloudCodePatchStatus(); total != 11 || applied != 11 {
+		t.Fatalf("CloudCodePatchStatus() = (%d, %d), want (11, 11)", applied, total)
 	}
 	if applyCloudCodePatch() {
 		t.Fatal("expected second applyCloudCodePatch call to be idempotent")
@@ -516,10 +525,14 @@ func TestApplyCloudCodePatchDiscoversWindowsRoamingUVToolDir(t *testing.T) {
 		{geminiPath, cloudCodePatchMarker},
 		{geminiPath, cloudCodeGeminiRoutingMarker},
 		{geminiPath, cloudCodeGeminiNonStreamMarker},
+		{geminiPath, cloudCodeGeminiFRLosslessMarker},
 		{routeSpecsPath, cloudCodeRouteSpecsMarker},
 		{runtimePath, cloudCodeRuntimePatchMarker},
 		{routesPath, cloudCodeRoutesPatchMarker},
 		{openaiPath, cloudCodeStreamingPatchMarker},
+		{losslessPath, cloudCodeLosslessWindowsMarker},
+		{prefixPath, cloudCodePrefixTrackerMarker},
+		{routerPath, cloudCodeSmartCrusherMarker},
 	} {
 		raw, err := os.ReadFile(tc.path)
 		if err != nil {
@@ -554,5 +567,104 @@ func TestApplyCloudCodePatchSkipsWithoutHomeOverrideInTest(t *testing.T) {
 	}
 	if string(raw) != routesSrc {
 		t.Fatalf("proxy_routes.py was modified without home override")
+	}
+}
+
+func TestPatchCloudCodeGeminiFRLossless(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gemini.py")
+	if err := os.WriteFile(path, []byte(testCloudCodeGeminiFixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := patchCloudCodeGemini(path); err != nil || !changed {
+		t.Fatalf("patchCloudCodeGemini failed: changed=%v err=%v", changed, err)
+	}
+	if changed, err := patchCloudCodeGeminiFRLossless(path); err != nil || !changed {
+		t.Fatalf("patchCloudCodeGeminiFRLossless failed: changed=%v err=%v", changed, err)
+	}
+	if changedAgain, err := patchCloudCodeGeminiFRLossless(path); err != nil || changedAgain {
+		t.Fatalf("expected idempotent patchCloudCodeGeminiFRLossless, changed=%v err=%v", changedAgain, err)
+	}
+	out, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{cloudCodeGeminiFRLosslessMarker, "_compact_fr_str", "compact_lossless", `"functionResponse"`} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("patched gemini.py missing %q", want)
+		}
+	}
+}
+
+func TestPatchCloudCodeUpstreamTransformsAndPrefixTracker(t *testing.T) {
+	dir := t.TempDir()
+	prefixPath := filepath.Join(dir, "prefix_tracker.py")
+	prefixSrc := "    # Defensive: if a transform dropped prefix messages, restore them.\n    if len(restored) < frozen:\n        return list(original_messages[:frozen]) + restored, frozen\n"
+	if err := os.WriteFile(prefixPath, []byte(prefixSrc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := patchCloudCodePrefixTracker(prefixPath); err != nil || !changed {
+		t.Fatalf("patchCloudCodePrefixTracker failed: changed=%v err=%v", changed, err)
+	}
+	if changedAgain, err := patchCloudCodePrefixTracker(prefixPath); err != nil || changedAgain {
+		t.Fatalf("expected idempotent patchCloudCodePrefixTracker, changed=%v err=%v", changedAgain, err)
+	}
+
+	routerPath := filepath.Join(dir, "content_router.py")
+	routerSrc := "                            if compressed == content:\n                                from headroom._core import minify_json\n\n                                minified = minify_json(content)\n                                if minified is not None:\n"
+	if err := os.WriteFile(routerPath, []byte(routerSrc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := patchCloudCodeSmartCrusherMinify(routerPath); err != nil || !changed {
+		t.Fatalf("patchCloudCodeSmartCrusherMinify failed: changed=%v err=%v", changed, err)
+	}
+	if changedAgain, err := patchCloudCodeSmartCrusherMinify(routerPath); err != nil || changedAgain {
+		t.Fatalf("expected idempotent patchCloudCodeSmartCrusherMinify, changed=%v err=%v", changedAgain, err)
+	}
+}
+
+func TestPatchCloudCodeRealSitePackagesInTempDir(t *testing.T) {
+	realSite := filepath.Join(os.Getenv("LOCALAPPDATA"), "tokless", "headroom", "tools", "headroom-ai", "Lib", "site-packages")
+	if !util.Exists(realSite) {
+		t.Skip("real headroom site-packages not present")
+	}
+	tmp := t.TempDir()
+	files := []struct {
+		rel    string
+		fn     func(string) (bool, error)
+		marker string
+	}{
+		{filepath.Join("headroom", "proxy", "handlers", "gemini.py"), patchCloudCodeGeminiFRLossless, cloudCodeGeminiFRLosslessMarker},
+		{filepath.Join("headroom", "transforms", "lossless_compaction.py"), patchCloudCodeLosslessWindows, cloudCodeLosslessWindowsMarker},
+		{filepath.Join("headroom", "cache", "prefix_tracker.py"), patchCloudCodePrefixTracker, cloudCodePrefixTrackerMarker},
+		{filepath.Join("headroom", "transforms", "content_router.py"), patchCloudCodeSmartCrusherMinify, cloudCodeSmartCrusherMarker},
+	}
+	for _, f := range files {
+		src := filepath.Join(realSite, f.rel)
+		raw, err := os.ReadFile(src)
+		if err != nil {
+			t.Skipf("skipping %s: %v", f.rel, err)
+		}
+		dst := filepath.Join(tmp, filepath.Base(f.rel))
+		// Normalize CRLF -> LF if needed before testing, or test raw directly
+		if err := os.WriteFile(dst, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), f.marker) {
+			changed, err := f.fn(dst)
+			if err != nil || !changed {
+				t.Fatalf("patch %s failed on real file copy: changed=%v err=%v", f.rel, changed, err)
+			}
+		}
+		patched, err := os.ReadFile(dst)
+		if err != nil || !strings.Contains(string(patched), f.marker) {
+			t.Fatalf("patched %s missing marker %q", f.rel, f.marker)
+		}
+		pyExe := filepath.Join(os.Getenv("LOCALAPPDATA"), "tokless", "headroom", "tools", "headroom-ai", "Scripts", "python.exe")
+		if util.Exists(pyExe) {
+			res := util.Run(pyExe, []string{"-m", "py_compile", dst}, util.RunOptions{Capture: true})
+			if res.Code != 0 {
+				t.Fatalf("py_compile failed for patched %s: %s", f.rel, res.Stderr)
+			}
+		}
 	}
 }

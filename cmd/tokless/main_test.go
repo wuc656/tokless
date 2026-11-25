@@ -48,6 +48,35 @@ func TestIsSessionBootArg(t *testing.T) {
 	}
 }
 
+func TestIsFastHookArg(t *testing.T) {
+	yes := [][]string{
+		{"rtk-hook", "agy"},
+		{"rtk-hook", "codex"},
+		{"rtk", "hook", "cursor"},
+		{"codex-perm", "codex"},
+	}
+	for _, args := range yes {
+		if !isFastHookArg(args) {
+			t.Errorf("isFastHookArg(%v) = false, want true", args)
+		}
+	}
+
+	no := [][]string{
+		{"run-mcp", "claude", "codegraph"},
+		{"agy-hook", "codegraph-index"},
+		{"grok-hook", "session-start"},
+		{"proxy", "up"},
+		{"rtk-hook"},
+		{"codex-perm"},
+		{"rtk", "hook"},
+	}
+	for _, args := range no {
+		if isFastHookArg(args) {
+			t.Errorf("isFastHookArg(%v) = true, want false", args)
+		}
+	}
+}
+
 func TestParseArgsCapturesPositionals(t *testing.T) {
 	cases := []struct {
 		argv []string

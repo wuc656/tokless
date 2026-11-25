@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/commands"
@@ -30,6 +33,43 @@ var (
 
 // ensureSessionBoot is the hook-path readiness gate. Swapped in tests.
 var ensureSessionBoot = headroompkg.EnsureProxyUp
+
+// ensureSessionBootAsync triggers proxy startup in a detached child process so
+// synchronous PreToolUse hooks never stall waiting for Headroom health checks.
+var ensureSessionBootAsync = spawnProxyEnsureDetached
+
+func spawnProxyEnsureDetached() {
+	if !util.ProxyRoutingEnabled() || util.IsRunningInTest() {
+		return
+	}
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(headroompkg.ProxyPort()))
+	if conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond); err == nil {
+		_ = conn.Close()
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		return
+	}
+	cmd := exec.Command(exe, "__proxy-ensure")
+	util.PrepareSysProcAttr(cmd, true)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	_ = cmd.Start()
+}
+
+// isFastHookArg reports whether argv is a latency-sensitive PreToolUse hot-path
+// hook that must not block on synchronous proxy startup.
+func isFastHookArg(args []string) bool {
+	switch {
+	case len(args) >= 2 && args[0] == "rtk-hook",
+		len(args) >= 3 && args[0] == "rtk" && args[1] == "hook",
+		len(args) >= 2 && args[0] == "codex-perm":
+		return true
+	}
+	return false
+}
 
 // isSessionBootArg reports whether argv names an agent-session entry point
 // (run-mcp, rtk-hook variants, codex-perm, codegraph-index hooks, cursor
@@ -302,6 +342,8 @@ func run() int {
 	if isSessionBootArg(os.Args[1:]) {
 		if len(os.Args) >= 4 && os.Args[1] == "copilot-hook" && os.Args[2] == "codegraph-index" && os.Args[3] == "--vscode" {
 			headroompkg.EnsureCopilotProxyUp()
+		} else if isFastHookArg(os.Args[1:]) {
+			ensureSessionBootAsync()
 		} else {
 			ensureSessionBoot()
 		}

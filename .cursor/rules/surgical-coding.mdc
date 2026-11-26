@@ -1,0 +1,8 @@
+---
+description: This rule keeps edits surgical, clarifies ambiguous requests, and uses existing project verification without unrequested test files.
+alwaysApply: true
+---
+## Surgical Coding (principles)
+
+- Touch only code required by the request; avoid unrelated refactors, reformatting, or speculative features.
+- Verify with the project's existing build, typecheck, or test command when appropriate. Never create unrequested test files, mock harnesses, or standalone Python simulation scripts.

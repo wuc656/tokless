@@ -718,7 +718,7 @@ func resolveWindowsBatchToNode(command string, argv []string) (string, []string,
 	base := strings.ToLower(filepath.Base(strings.ReplaceAll(command, "\\", "/")))
 	var batchPath string
 	var tail []string
-	if (base == "cmd" || base == "cmd.exe") {
+	if base == "cmd" || base == "cmd.exe" {
 		args := argv
 		if len(args) > 0 && strings.EqualFold(args[0], command) {
 			args = args[1:]

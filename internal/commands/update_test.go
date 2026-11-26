@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/tools"
 	"github.com/HoangP8/tokless/internal/util"
 )
@@ -48,7 +49,7 @@ func legacyCtxMcpConfig(t *testing.T) string {
 func TestRunUpdateToolsFlagScopesDryRun(t *testing.T) {
 	openCodeUpdateEnv(t)
 	legacyCtxMcpConfig(t)
-	all := []string{"rtk", "codegraph", "context-mode", "headroom", "projectmem"}
+	all := []string{"rtk", "codegraph", "context-mode", "headroom"}
 	for _, tc := range []struct {
 		name  string
 		tools []string
@@ -111,4 +112,74 @@ func TestResyncInstructionWiringScopedSkipsUnlisted(t *testing.T) {
 	if raw, _ := util.ReadFileSafe(instrPath); strings.Contains(raw, "stale") {
 		t.Fatalf("unscoped resync must refresh the stale body:\n%s", raw)
 	}
+}
+
+func TestResyncInstructionWiringUpgradesFromV1_0_42(t *testing.T) {
+	agents.Register()
+	tools.Register()
+	t.Setenv("TOKLESS_TEST", "1")
+
+	t.Run("full mode wires new instruction tools and refreshes existing sections", func(t *testing.T) {
+		withSelHome(t)
+		seedAgentInstalled(t, "claude")
+		if err := util.SaveSelection("full", []string{}); err != nil {
+			t.Fatal(err)
+		}
+		instrPath := util.ClaudeCodePaths().Instructions
+		const v142 = "# User Notes\n\n## Code Index (codegraph)\n- old git ls-files | wc -l\n\n## Context Tools (context-mode)\n- old verbose block\n"
+		write(t, instrPath, v142)
+
+		resyncInstructionWiring()
+
+		raw, ok := util.ReadFileSafe(instrPath)
+		if !ok {
+			t.Fatalf("missing instructions file %s", instrPath)
+		}
+		if !strings.Contains(raw, "# User Notes") {
+			t.Fatalf("user content was not preserved:\n%s", raw)
+		}
+		if strings.Contains(raw, "git ls-files") || strings.Contains(raw, "old verbose block") {
+			t.Fatalf("stale v1.0.42 template text remained:\n%s", raw)
+		}
+		for _, want := range []string{
+			"## Surgical Coding (principles)",
+			"## Terse Output (caveman)",
+			"## Minimal Diff (ponytail)",
+			"## Code Index (codegraph)",
+			"## Context Tools (context-mode)",
+		} {
+			if !strings.Contains(raw, want) {
+				t.Fatalf("missing upgraded section %q:\n%s", want, raw)
+			}
+		}
+	})
+
+	t.Run("selected mode refreshes chosen section without adding unselected tools", func(t *testing.T) {
+		withSelHome(t)
+		seedAgentInstalled(t, "claude")
+		if err := util.SaveSelection("selected", []string{"codegraph"}); err != nil {
+			t.Fatal(err)
+		}
+		instrPath := util.ClaudeCodePaths().Instructions
+		write(t, instrPath, "## Code Index (codegraph)\n- old git ls-files | wc -l\n")
+
+		resyncInstructionWiring()
+
+		raw, ok := util.ReadFileSafe(instrPath)
+		if !ok {
+			t.Fatalf("missing instructions file %s", instrPath)
+		}
+		if strings.Contains(raw, "git ls-files") || !strings.Contains(raw, "codegraph_explore") {
+			t.Fatalf("selected codegraph section was not refreshed:\n%s", raw)
+		}
+		for _, unwanted := range []string{
+			"## Surgical Coding (principles)",
+			"## Terse Output (caveman)",
+			"## Minimal Diff (ponytail)",
+		} {
+			if strings.Contains(raw, unwanted) {
+				t.Fatalf("unselected section %q was added:\n%s", unwanted, raw)
+			}
+		}
+	})
 }

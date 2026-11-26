@@ -866,10 +866,12 @@ func TestInitRollsBackEveryAgentWhenBinaryDisappears(t *testing.T) {
 	origInstall, origWire := rtk.Install, rtk.WireFor["antigravity"]
 	t.Cleanup(func() { rtk.Install, rtk.WireFor["antigravity"] = origInstall, origWire })
 	rtk.Install = func(core.RunOpts) (bool, error) { return true, nil }
-	pjm := core.GetTool("projectmem")
-	origPjmInstall := pjm.Install
-	t.Cleanup(func() { pjm.Install = origPjmInstall })
-	pjm.Install = func(core.RunOpts) (bool, error) { return true, nil }
+	cg := core.GetTool("codegraph")
+	origCgInstall, origCgNode, origCgGit := cg.Install, cg.NeedsNode, cg.NeedsGit
+	t.Cleanup(func() { cg.Install, cg.NeedsNode, cg.NeedsGit = origCgInstall, origCgNode, origCgGit })
+	cg.NeedsNode = false
+	cg.NeedsGit = false
+	cg.Install = func(core.RunOpts) (bool, error) { return true, nil }
 	seeded := homeFilesOutsideDataDir(t, home)
 
 	// Defender deletes the exe right after the second agent is wired.
@@ -881,7 +883,7 @@ func TestInitRollsBackEveryAgentWhenBinaryDisappears(t *testing.T) {
 		return ok, err
 	}
 
-	if code := commands.RunInit(commands.InitOptions{Agents: []string{"claude", "antigravity"}, Tools: []string{"rtk", "projectmem"}}); code != 1 {
+	if code := commands.RunInit(commands.InitOptions{Agents: []string{"claude", "antigravity"}, Tools: []string{"rtk", "codegraph"}}); code != 1 {
 		t.Fatalf("RunInit returned %d, want 1", code)
 	}
 	assertConfigsUnchanged(t, before)

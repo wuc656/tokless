@@ -170,8 +170,9 @@ func cleanResetPurgeWith(ops removeOps, opts InitOptions) []string {
 	}
 	// Strip all instructions from all agents
 	for _, agent := range core.ListAgents() {
-		toolsPkg.RemoveOwner(agent.ID, "codegraph")
-		toolsPkg.RemoveOwner(agent.ID, "context-mode")
+		for _, owner := range util.ToklessOwners {
+			toolsPkg.RemoveOwner(agent.ID, owner)
+		}
 		p := toolsPkg.InstructionPath(agent.ID)
 		if p != "" && util.Exists(p) {
 			raw, ok := util.ReadFileSafe(p)
@@ -307,8 +308,9 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 	}
 	// Strip all instructions from all agents
 	for _, agent := range core.ListAgents() {
-		toolsPkg.RemoveOwner(agent.ID, "codegraph")
-		toolsPkg.RemoveOwner(agent.ID, "context-mode")
+		for _, owner := range util.ToklessOwners {
+			toolsPkg.RemoveOwner(agent.ID, owner)
+		}
 		p := toolsPkg.InstructionPath(agent.ID)
 		if p != "" && util.Exists(p) {
 			raw, ok := util.ReadFileSafe(p)
@@ -667,7 +669,7 @@ func isOnlyToklessHeaderContent(s string) bool {
 	lines := strings.Split(s, "\n")
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
-		if t == "" || t == "# Agent Instructions" || t == "# Agent Operating System" || t == "## Index" || t == "## Index →" || t == "Apply on every coding task:" || t == "**Tools (call):**" || t == "**Skills (apply):**" {
+		if t == "" || t == "# Agent Instructions" || t == "# Agent Operating System" || t == "## Index" || t == "## Index →" || t == "Apply on every coding task:" || t == "Token-saving defaults (preserve normal reasoning and behavior):" || t == "**Tools (call):**" || t == "**Skills (apply):**" || t == "**Discipline (apply):**" {
 			continue
 		}
 		return false

@@ -978,6 +978,9 @@ func ctxUnwireHarness(agent string) core.AgentFn {
 // MD-block write order follows this sequence.
 func Register() {
 	core.RegisterTool(rtk)
+	core.RegisterTool(principles)
+	core.RegisterTool(caveman)
+	core.RegisterTool(ponytail)
 	core.RegisterTool(codegraph)
 	core.RegisterTool(contextMode)
 	core.RegisterTool(headroom)

@@ -116,3 +116,46 @@ func TestInstallCursorProjectRulesRequiresWorkspace(t *testing.T) {
 		t.Fatal("empty workspace was accepted")
 	}
 }
+
+func TestInstallCursorProjectRulesUpgradesV1_0_42GeneratedRules(t *testing.T) {
+	home := t.TempDir()
+	SetHomeOverride(home)
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", home)
+	t.Cleanup(func() { SetHomeOverride("") })
+
+	workspace := t.TempDir()
+	rulesDir := filepath.Join(workspace, ".cursor", "rules")
+	if err := os.MkdirAll(rulesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	specs := CursorProjectRuleSpecs()
+	codeSpec := specs[0]
+	oldGenerated := "---\ndescription: " + codeSpec.Description + "\nalwaysApply: true\n---\n" + SectionsByOwner["codegraph"] + "\n\n- old git ls-files | wc -l\n"
+	if err := os.WriteFile(filepath.Join(rulesDir, codeSpec.Filename), []byte(oldGenerated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctxSpec := specs[1]
+	if err := os.WriteFile(filepath.Join(rulesDir, ctxSpec.Filename), []byte("user-authored"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if ok, err := InstallCursorProjectRules(workspace, false); err != nil || !ok {
+		t.Fatalf("upgrade cursor rules: ok=%v err=%v", ok, err)
+	}
+	for _, spec := range specs {
+		got, err := os.ReadFile(filepath.Join(rulesDir, spec.Filename))
+		if err != nil {
+			t.Fatalf("read %s: %v", spec.Filename, err)
+		}
+		if spec.Filename == ctxSpec.Filename {
+			if string(got) != "user-authored" {
+				t.Fatalf("user-authored %s was overwritten: %q", spec.Filename, string(got))
+			}
+			continue
+		}
+		if want := CursorProjectRuleContent(spec); string(got) != want {
+			t.Errorf("%s not upgraded to v1.0.43 content:\ngot:\n%s\nwant:\n%s", spec.Filename, string(got), want)
+		}
+	}
+}

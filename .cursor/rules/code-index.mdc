@@ -4,23 +4,5 @@ alwaysApply: true
 ---
 ## Code Index (codegraph)
 
-Tool `codegraph_explore` gives source, call path, and blast radius in one call.
-
-### Rules
-
-- `.codegraph/` index exists: use CodeGraph first.
-  - Use for: how X works, flows, architecture, callers, blast radius, symbols.
-  - Trust results — no re-read/re-grep. Stale banner? Read only listed files.
-  - Result spilled? Search only needed symbol; never read whole spill. Use context-mode when spill is large.
-  - Configs/docs/.env/non-indexed: use normal tools.
-- No `.codegraph/`: run `git ls-files | wc -l`.
-  - ≤5 files or no git: use normal tools.
-  - Otherwise: run `tokless index` once.
-    - Ready: use CodeGraph.
-    - Fails/CLI missing: use normal tools; do not retry.
-
-### Examples
-
-- `codegraph_explore("how does auth middleware validate a JWT")`
-- `codegraph_explore("flow from HTTP request to DB query")`
-- `codegraph_explore("OrderService.createOrder callers and blast radius")`
+- Prefer `codegraph_explore` first for architecture, call paths, callers, and blast radius when `.codegraph/` is indexed; read specific files directly whenever exact lines or edits are needed.
+- Skip `codegraph_explore` for configs, docs, tiny repos, or when unavailable; if results spill, query the needed symbol or filter via `context-mode` instead of reading the whole spill file.

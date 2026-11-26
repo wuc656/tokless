@@ -21,10 +21,10 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 	setupHome(t)
 
 	agentsList := []string{"claude", "opencode", "codex", "antigravity", "grok"}
-	wireOrder := []string{"codegraph", "context-mode"}
-	expectedOrder := []string{
-		util.SectionsByOwner["codegraph"],
-		util.SectionsByOwner["context-mode"],
+	wireOrder := append([]string(nil), util.ToklessOwners...)
+	expectedOrder := make([]string, 0, len(util.ToklessOwners))
+	for _, owner := range util.ToklessOwners {
+		expectedOrder = append(expectedOrder, util.SectionsByOwner[owner])
 	}
 
 	for _, agent := range agentsList {
@@ -68,7 +68,7 @@ func TestUnifiedBody_WiresAllOwnersAcrossAllAgents(t *testing.T) {
 			if !strings.Contains(body, "keep me") {
 				t.Errorf("user notes lost:\n%s", body)
 			}
-			for _, want := range []string{"use CodeGraph first", "blast radius", "tokless index", "do not retry"} {
+			for _, want := range []string{"codegraph_explore", "blast radius"} {
 				if !strings.Contains(body, want) {
 					t.Errorf("missing Codegraph instruction %q:\n%s", want, body)
 				}
@@ -84,7 +84,7 @@ func TestUnifiedBody_PerToolUnwire(t *testing.T) {
 	setupHome(t)
 
 	agentsList := []string{"claude", "opencode", "codex", "antigravity", "grok"}
-	wireOrder := []string{"codegraph", "context-mode"}
+	wireOrder := append([]string(nil), util.ToklessOwners...)
 
 	for _, agent := range agentsList {
 		t.Run(agent, func(t *testing.T) {
@@ -248,4 +248,15 @@ func lookupTool(t *testing.T, id string) *core.ToolManifest {
 	}
 	t.Fatalf("tool %q not registered", id)
 	return nil
+}
+
+func TestAllSevenToolsRegisteredWithoutProjectmem(t *testing.T) {
+	for _, want := range []string{"rtk", "principles", "caveman", "ponytail", "codegraph", "context-mode", "headroom"} {
+		if core.GetTool(want) == nil {
+			t.Errorf("tool %q not registered", want)
+		}
+	}
+	if core.GetTool("projectmem") != nil {
+		t.Fatal("projectmem should not be registered")
+	}
 }

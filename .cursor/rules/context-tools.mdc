@@ -4,29 +4,5 @@ alwaysApply: true
 ---
 ## Context Tools (context-mode)
 
-Tools `ctx_*` keep large or uncertain analysis out of context.
-
-### Rules
-
-| Tool | Role |
-|------|------|
-| `ctx_execute` | Run code or a command in sandbox, or analyze a file via `file`. Only stdout enters context. |
-| `ctx_batch` | Run many commands plus search `queries` in one call. |
-| `ctx_index` | Index a file, text, or URL (`path`, `content`, `url`) with a `source` label. |
-| `ctx_search` | Query indexed content and session memory. |
-
-- `read` small files and files you will edit. Analyze large files and logs with `ctx_execute` (`file` param); print only the answer.
-
-### Examples
-
-```javascript
-ctx_execute(language:"shell", code:"git log --oneline -20 | wc -l")
-ctx_execute(language:"shell", file:"app.log", code:"grep -c ERROR \"$CTX_FILE\"")
-ctx_batch(commands:["git diff HEAD~1"], queries:["failures"])
-ctx_index(url:"https://docs.example.com/api", source:"api-docs")
-ctx_search(queries:["auth endpoint"], source:"api-docs")
-```
-
-Use host tools for edits, Git writes, navigation, installs, and small output. Use context-mode for analysis and large command output. Sandbox writes do not affect host files.
-
-Windows: `pwsh -NoProfile -Command`, absolute paths, `X:\` maps to `/x/`, quote spaces.
+- Use host tools for edits, Git writes, small reads, and short commands (sandbox writes do not persist on host).
+- Use `ctx_execute` (`file` param for large files/logs), `ctx_batch` (multi-command + search), `ctx_index`, and `ctx_search` whenever raw output would flood context; print only the distilled answer. Windows shell: `pwsh -NoProfile -Command`.

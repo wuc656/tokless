@@ -8,14 +8,20 @@ import (
 	"strings"
 )
 
-// ToklessOwners is render order: tools.
+// ToklessOwners is render order: discipline skills then tools.
 var ToklessOwners = []string{
+	"principles",
+	"caveman",
+	"ponytail",
 	"codegraph",
 	"context-mode",
 }
 
 // SectionsByOwner maps each owner to its heading marker.
 var SectionsByOwner = map[string]string{
+	"principles":   "## Surgical Coding (principles)",
+	"caveman":      "## Terse Output (caveman)",
+	"ponytail":     "## Minimal Diff (ponytail)",
 	"codegraph":    "## Code Index (codegraph)",
 	"context-mode": "## Context Tools (context-mode)",
 }
@@ -30,6 +36,9 @@ type CursorProjectRuleSpec struct {
 var cursorProjectRuleSpecs = []CursorProjectRuleSpec{
 	{Filename: "code-index.mdc", Description: "This rule guides codebase exploration through relevant symbols, flows, dependencies, and affected areas.", Owner: "codegraph"},
 	{Filename: "context-tools.mdc", Description: "This rule guides efficient context collection, analysis, and retrieval while keeping raw data focused.", Owner: "context-mode"},
+	{Filename: "surgical-coding.mdc", Description: "This rule keeps edits surgical, clarifies ambiguous requests, and uses existing project verification without unrequested test files.", Owner: "principles"},
+	{Filename: "terse-output.mdc", Description: "This rule compresses user-facing prose while keeping code, commands, paths, and reasoning intact.", Owner: "caveman"},
+	{Filename: "minimal-diff.mdc", Description: "This rule prioritizes reusing existing project helpers and standard library before adding abstractions.", Owner: "ponytail"},
 }
 
 // CursorProjectRuleContent renders one Cursor project rule from embedded instructions.
@@ -42,8 +51,14 @@ func CursorProjectRuleSpecs() []CursorProjectRuleSpec {
 	return append([]CursorProjectRuleSpec(nil), cursorProjectRuleSpecs...)
 }
 
-// InstallCursorProjectRules installs Cursor rules in workspace, never overwriting
-// existing files, and removing generated files when their tool is deselected.
+// IsToklessCursorRuleContent reports whether raw matches a Tokless-managed Cursor rule file.
+func IsToklessCursorRuleContent(raw string, spec CursorProjectRuleSpec) bool {
+	prefix := "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n" + SectionsByOwner[spec.Owner]
+	return strings.HasPrefix(raw, prefix)
+}
+
+// InstallCursorProjectRules installs or updates Tokless-managed Cursor rules in workspace,
+// never overwriting user-authored files, and removing generated files when their tool is deselected.
 func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
 	if workspace == "" {
 		return false, fmt.Errorf("Cursor project rules require non-empty workspace")
@@ -65,15 +80,18 @@ func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
 	for _, spec := range cursorProjectRuleSpecs {
 		path := filepath.Join(rulesDir, spec.Filename)
 		if !IsToolSelected(spec.Owner) {
-			if data, readErr := os.ReadFile(path); readErr == nil && string(data) == CursorProjectRuleContent(spec) {
+			if data, readErr := os.ReadFile(path); readErr == nil && IsToklessCursorRuleContent(string(data), spec) {
 				_ = os.Remove(path)
 			}
 			continue
 		}
-		if _, err := os.Stat(path); err == nil {
-			continue
+		want := CursorProjectRuleContent(spec)
+		if existing, readErr := os.ReadFile(path); readErr == nil {
+			if string(existing) == want || !IsToklessCursorRuleContent(string(existing), spec) {
+				continue
+			}
 		}
-		if err := os.WriteFile(path, []byte(CursorProjectRuleContent(spec)), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(want), 0o644); err != nil {
 			return false, fmt.Errorf("write Cursor rule %s: %w", spec.Filename, err)
 		}
 	}
@@ -81,6 +99,9 @@ func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
 }
 
 var legacySectionsByOwner = map[string][]string{
+	"principles":   {"## 1. Principles", "## Principles", "## Principles (craft)"},
+	"caveman":      {"## 2. Response Style", "## Response Style (caveman)", "## Voice (caveman)"},
+	"ponytail":     {"## 3. Build Discipline", "## Build Discipline (ponytail)", "## Reuse Ladder (ponytail)", "## Lazy Ladder (ponytail)"},
 	"codegraph":    {"## 4. Code Search", "## Codegraph", "## Code Index (codegraph)"},
 	"context-mode": {"## 5. Context Control", "## Context Tools", "## Context Tools (context-mode)"},
 }
@@ -178,13 +199,11 @@ func ToklessAgentBody(owners []string) string {
 		b.WriteString(instructionIndexSection())
 		b.WriteString("\n\n")
 	}
-	if hasOwner(owners, "codegraph") {
-		b.WriteString(instructionSection("codegraph"))
-		b.WriteString("\n\n")
-	}
-	if hasOwner(owners, "context-mode") {
-		b.WriteString(instructionSection("context-mode"))
-		b.WriteString("\n\n")
+	for _, owner := range ToklessOwners {
+		if hasOwner(owners, owner) {
+			b.WriteString(instructionSection(owner))
+			b.WriteString("\n\n")
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

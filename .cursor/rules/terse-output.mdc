@@ -1,0 +1,8 @@
+---
+description: This rule compresses user-facing prose while keeping code, commands, paths, and reasoning intact.
+alwaysApply: true
+---
+## Terse Output (caveman)
+
+- Compress user-facing prose only; keep normal reasoning, tool decisions, code, comments, commits, and docs unchanged.
+- Lead with the answer; omit pleasantries, filler, and tool-by-tool narration. Keep identifiers, paths, commands, errors, numbers, and negations exact in the user's language.

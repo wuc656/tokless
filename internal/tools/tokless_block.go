@@ -148,25 +148,29 @@ func stripLegacy(raw string) string {
 
 // stripLegacyHeading removes a `## Heading` block and surrounding blank lines.
 func stripLegacyHeading(raw, heading string) string {
+	searchFrom := 0
 	for {
-		i := strings.Index(raw, heading)
-		if i < 0 {
+		idx := strings.Index(raw[searchFrom:], heading)
+		if idx < 0 {
 			return raw
 		}
-		// back up to start of line
+		i := searchFrom + idx
+		after := i + len(heading)
+		lineStart := i == 0 || raw[i-1] == '\n'
+		lineEnd := after == len(raw) || raw[after] == '\n' || raw[after] == '\r'
+		if !lineStart || !lineEnd {
+			searchFrom = after
+			continue
+		}
 		start := i
-		if start > 0 && raw[start-1] != '\n' {
-			// not at line start; skip — likely a mid-line mention
-			return raw
-		}
 		// forward to end of block: next `## ` line or EOF
 		end := len(raw)
-		rest := raw[i+len(heading):]
+		rest := raw[after:]
 		for k := 0; k < len(rest); k++ {
 			if rest[k] == '\n' {
 				peek := rest[k+1:]
 				if strings.HasPrefix(peek, "## ") {
-					end = i + len(heading) + k + 1
+					end = after + k + 1
 					break
 				}
 			}
@@ -191,6 +195,7 @@ func stripLegacyHeading(raw, heading string) string {
 			}
 		}
 		raw = raw[:start] + raw[end:]
+		searchFrom = start
 	}
 }
 
@@ -438,7 +443,7 @@ func stripIndexPreamble(head []string) []string {
 func isOnlyToklessHeader(lines []string) bool {
 	for _, l := range lines {
 		t := strings.TrimSpace(l)
-		if t == "" || t == "# Agent Instructions" || t == "# Agent Operating System" || t == "## Index" || t == "## Index →" || t == "Apply on every coding task:" || t == "**Tools (call):**" || t == "**Skills (apply):**" {
+		if t == "" || t == "# Agent Instructions" || t == "# Agent Operating System" || t == "## Index" || t == "## Index →" || t == "Apply on every coding task:" || t == "Token-saving defaults (preserve normal reasoning and behavior):" || t == "**Tools (call):**" || t == "**Skills (apply):**" || t == "**Discipline (apply):**" {
 			continue
 		}
 		return false
@@ -449,7 +454,10 @@ func isOnlyToklessHeader(lines []string) bool {
 func isToklessIndexPreamble(lines []string) bool {
 	body := strings.Join(lines, "\n")
 	return strings.Contains(body, "Principles —") ||
+		strings.Contains(body, "Surgical Coding (principles)") ||
 		strings.Contains(body, "Response Style") ||
+		strings.Contains(body, "Terse Output (caveman)") ||
+		strings.Contains(body, "Minimal Diff (ponytail)") ||
 		strings.Contains(body, "Code Index") ||
 		strings.Contains(body, "Context Tools") ||
 		strings.Contains(body, "Project Memory") ||
@@ -544,4 +552,78 @@ func joinEmpty(head, tail string) string {
 	default:
 		return head + "\n\n" + tail
 	}
+}
+
+func agentInstructionFile(agent string) string {
+	if agent == "kilo" {
+		return kiloInstructionsPath()
+	}
+	return instructionPath(agent)
+}
+
+// HasManagedOrLegacyInstructions reports whether agent has any Tokless-managed or legacy section.
+func HasManagedOrLegacyInstructions(agent string) bool {
+	path := agentInstructionFile(agent)
+	if path == "" {
+		return false
+	}
+	raw, ok := util.ReadFileSafe(path)
+	if !ok {
+		return false
+	}
+	cleaned := stripLegacy(raw)
+	_, blocks, _ := fileParts(cleaned)
+	return cleaned != raw || len(blocks) > 0
+}
+
+// HasLegacyOwnerMarker reports whether agent's instruction file contains any current or legacy heading for owner.
+func HasLegacyOwnerMarker(agent, owner string) bool {
+	path := agentInstructionFile(agent)
+	if path == "" {
+		return false
+	}
+	raw, ok := util.ReadFileSafe(path)
+	return ok && util.SectionPresent(raw, owner)
+}
+
+// RefreshExistingInstructionOwners re-renders already-present managed sections from the latest embedded template.
+func RefreshExistingInstructionOwners(agent string, filterIDs ...string) bool {
+	path := agentInstructionFile(agent)
+	if path == "" {
+		return false
+	}
+	raw, ok := util.ReadFileSafe(path)
+	if !ok {
+		return false
+	}
+	_, blocks, _ := fileParts(stripLegacy(raw))
+	owners := ownersFromBlocks(blocks)
+	if len(owners) == 0 {
+		return false
+	}
+	if len(filterIDs) > 0 {
+		matched := false
+		for _, o := range owners {
+			for _, id := range filterIDs {
+				if o == id {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if agent == "kilo" {
+		return kiloWriteOwner(owners[0])
+	}
+	changed := WriteOwner(agent, owners[0])
+	if agent == "copilot" && HasOwner("copilot", owners[0]) {
+		agents.SyncCopilotIdeInstructions()
+	}
+	return changed
 }

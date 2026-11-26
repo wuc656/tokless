@@ -1,0 +1,8 @@
+---
+description: This rule prioritizes reusing existing project helpers and standard library before adding abstractions.
+alwaysApply: true
+---
+## Minimal Diff (ponytail)
+
+- Prefer existing project helpers, then standard library, then current dependencies before adding new helpers or packages.
+- Favor direct changes over new wrappers, config layers, or one-off abstractions unless requested.

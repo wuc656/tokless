@@ -101,6 +101,7 @@ func RunDoctor(offline, fix bool) int {
 	toolManifests := core.ListTools()
 
 	if fix {
+		toolindex.ConfigureInstructionConflicts(true)
 		for _, agent := range core.ListAgents() {
 			if !agent.Detect().Installed {
 				continue
@@ -116,7 +117,37 @@ func RunDoctor(offline, fix bool) int {
 					}
 				}
 			}
+			if agent.ID == "cursor" {
+				if projDir, isProj, projErr := cursorProjectDirInScope(false); projErr == nil && isProj {
+					needsCursorSync := false
+					for _, tm := range toolManifests {
+						if tm.InstructionOnly && util.IsToolSelected(tm.ID) && !cursorInstructionRuleConfigured(tm.ID) {
+							needsCursorSync = true
+							break
+						}
+					}
+					if needsCursorSync {
+						util.L.Sub("fixing " + agent.Label + ": syncing Cursor project rules…")
+						_, _ = util.InstallCursorProjectRules(projDir, false)
+					}
+				}
+				continue
+			}
+			for _, tm := range toolManifests {
+				if !tm.InstructionOnly || !util.IsToolSelected(tm.ID) {
+					continue
+				}
+				if verify, ok := tm.VerifyFor[agent.ID]; ok {
+					if r := verify(); r != nil && !*r {
+						if wireFn, wok := tm.WireFor[agent.ID]; wok {
+							util.L.Sub("fixing " + agent.Label + ": wiring " + tm.Label + "…")
+							_, _ = wireFn(core.RunOpts{DryRun: false, Upgrade: false})
+						}
+					}
+				}
+			}
 		}
+		toolindex.ConfigureInstructionConflicts(false)
 	}
 
 	var reports []agentReport
@@ -246,7 +277,7 @@ func RunDoctor(offline, fix bool) int {
 	legacyCount := ProbeLegacyArtifactsCount()
 	if legacyCount > 0 {
 		util.TreeCorner("Legacy Artifacts")
-		util.TreeLeaf(statusWarn(fmt.Sprintf("%d legacy original Tokless artifact(s) found (projectmem / caveman / ponytail / principles)", legacyCount)))
+		util.TreeLeaf(statusWarn(fmt.Sprintf("%d legacy original Tokless artifact(s) found (legacy projectmem / plugins / rules)", legacyCount)))
 		if fix {
 			shouldClean := true
 			if util.IsInteractive() {

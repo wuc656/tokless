@@ -6,10 +6,13 @@ import (
 )
 
 func TestAgentInstructionsContent(t *testing.T) {
-	owners := []string{"codegraph", "context-mode"}
+	owners := []string{"principles", "caveman", "ponytail", "codegraph", "context-mode"}
 	body := ToklessAgentBody(owners)
 
 	for _, section := range []string{
+		"## Surgical Coding (principles)",
+		"## Terse Output (caveman)",
+		"## Minimal Diff (ponytail)",
 		"## Code Index (codegraph)",
 		"## Context Tools (context-mode)",
 	} {
@@ -21,9 +24,14 @@ func TestAgentInstructionsContent(t *testing.T) {
 	if strings.Contains(body, "hook") || strings.Contains(body, "Hook") {
 		t.Error("instructions contain 'hook' — should be zero hooks")
 	}
-	for _, forbidden := range []string{"headroom_compress", "headroom_retrieve", "Headroom (headroom)"} {
+	for _, forbidden := range []string{
+		"headroom_compress", "headroom_retrieve", "Headroom (headroom)",
+		"test_*.py", "demo()", "__main__", "shortcut:", "start_session", "precheck_file", "record_attempt",
+		"ask briefly", "Name a simpler option", "Trust results", "no re-read", "MANDATORY", "Do NOT answer",
+		"git ls-files", "tokless index", "projectmem", "get_summary",
+	} {
 		if strings.Contains(body, forbidden) {
-			t.Errorf("instructions contain retired Headroom MCP guidance: %s", forbidden)
+			t.Errorf("instructions contain forbidden/high-interference rule: %s", forbidden)
 		}
 	}
 
@@ -55,6 +63,9 @@ func TestPerOwnerRendering(t *testing.T) {
 		marker  string
 		example string
 	}{
+		{"principles", "## Surgical Coding (principles)", "Never create unrequested test files"},
+		{"caveman", "## Terse Output (caveman)", "Compress user-facing prose only"},
+		{"ponytail", "## Minimal Diff (ponytail)", "Prefer existing project helpers"},
 		{"codegraph", "## Code Index (codegraph)", "codegraph_explore"},
 		{"context-mode", "## Context Tools (context-mode)", "ctx_execute"},
 	} {

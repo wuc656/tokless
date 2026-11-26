@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/HoangP8/tokless/internal/agents"
 	"github.com/HoangP8/tokless/internal/core"
@@ -388,15 +389,64 @@ func removeString(ss []string, s string) []string {
 	return out
 }
 
-// resyncInstructionWiring refreshes already-wired static instructions on update.
+// resyncInstructionWiring refreshes already-wired instructions and wires newly
+// added selected instruction tools onto agents already managed by Tokless.
 func resyncInstructionWiring(ids ...string) {
-	var tools []*core.ToolManifest
+	var instrTools []*core.ToolManifest
 	for _, tool := range core.ListTools() {
 		if tool.InstructionOnly && (len(ids) == 0 || contains(ids, tool.ID)) {
-			tools = append(tools, tool)
+			instrTools = append(instrTools, tool)
 		}
 	}
-	resyncWiring(tools)
+	for _, agent := range core.ListAgents() {
+		if !agent.Detect().Installed {
+			continue
+		}
+		_ = util.WithSilencedLogs(func() error {
+			toolsPkg.RefreshExistingInstructionOwners(agent.ID, ids...)
+			return nil
+		})
+		for _, tool := range instrTools {
+			wire, ok := tool.WireFor[agent.ID]
+			if !ok {
+				continue
+			}
+			alreadyWired := false
+			if verify, vok := tool.WiredAnyFor[agent.ID]; vok {
+				if r := verify(); r != nil && *r {
+					alreadyWired = true
+				}
+			} else if verify, vok := tool.VerifyFor[agent.ID]; vok {
+				if r := verify(); r != nil && *r {
+					alreadyWired = true
+				}
+			}
+			hasLegacy := toolsPkg.HasLegacyOwnerMarker(agent.ID, tool.ID)
+			selectedUpgrade := len(ids) == 0 && util.IsToolSelected(tool.ID) && toolsPkg.HasManagedOrLegacyInstructions(agent.ID)
+			if !alreadyWired && !hasLegacy && !selectedUpgrade {
+				continue
+			}
+			_ = util.WithSilencedLogs(func() error {
+				_, _ = wire(core.RunOpts{Upgrade: true})
+				return nil
+			})
+		}
+	}
+	if len(ids) == 0 {
+		if projDir, isProj, projErr := cursorProjectDirInScope(false); projErr == nil && isProj && hasExistingToklessCursorRules(projDir) {
+			_, _ = util.InstallCursorProjectRules(projDir, false)
+		}
+	}
+}
+
+func hasExistingToklessCursorRules(workspace string) bool {
+	for _, spec := range util.CursorProjectRuleSpecs() {
+		raw, ok := util.ReadFileSafe(filepath.Join(workspace, ".cursor", "rules", spec.Filename))
+		if ok && util.IsToklessCursorRuleContent(raw, spec) {
+			return true
+		}
+	}
+	return false
 }
 
 func openCodeResyncNote(pin, hide, migrate bool) string {

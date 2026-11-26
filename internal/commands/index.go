@@ -56,6 +56,21 @@ func cursorProjectDir(explicit bool) (string, bool, error) {
 	return "", false, nil
 }
 
+// cursorProjectDirInScope resolves the active Cursor project only when it is inside an overridden test home.
+func cursorProjectDirInScope(explicit bool) (string, bool, error) {
+	dir, ok, err := cursorProjectDir(explicit)
+	if err != nil || !ok {
+		return dir, ok, err
+	}
+	if util.HasHomeOverride() {
+		rel, relErr := filepath.Rel(util.Home(), dir)
+		if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return "", false, nil
+		}
+	}
+	return dir, true, nil
+}
+
 func RunIndex(opts InitOptions, auto bool) int {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -200,7 +215,14 @@ func RunGrokSessionStartHook() int {
 
 // RunCursorProjectRulesHook refreshes project rules on Cursor workspace startup.
 func RunCursorProjectRulesHook() int {
-	if !util.IsToolSelected("codegraph") && !util.IsToolSelected("context-mode") {
+	anyRuleSelected := false
+	for _, owner := range util.ToklessOwners {
+		if util.IsToolSelected(owner) {
+			anyRuleSelected = true
+			break
+		}
+	}
+	if !anyRuleSelected {
 		return 0
 	}
 	input, _ := io.ReadAll(os.Stdin)

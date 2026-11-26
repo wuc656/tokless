@@ -620,6 +620,26 @@ func TestPatchCloudCodeUpstreamTransformsAndPrefixTracker(t *testing.T) {
 	if changedAgain, err := patchCloudCodeSmartCrusherMinify(routerPath); err != nil || changedAgain {
 		t.Fatalf("expected idempotent patchCloudCodeSmartCrusherMinify, changed=%v err=%v", changedAgain, err)
 	}
+
+	lossless045Path := filepath.Join(dir, "lossless_compaction_045.py")
+	lossless045Src := "_TIMESTAMP_ROW_RE = re.compile(\n    r\"^\\s*\\[?(?:\"\n    r\"\\d{4}-\\d{2}-\\d{2}[ T]\\d{1,2}:\\d{2}\"  # 2026-09-02 14:30 / ISO 8601 'T'\n    r\"|\\d{4}/\\d{2}/\\d{2}[ T]\\d{1,2}:\\d{2}\"  # Go log, nginx error log: 2026/09/02 14:30\n    r\"|\\d{2}/\\d{2}/\\d{2,4}[ T]\\d{1,2}:\\d{2}\"  # 09/02/2026 14:30\n    r\"|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{1,2}:\\d{2}\"  # syslog: Aug 16 11:02\n    r\"|[IWEF]\\d{4}\\s+\\d{1,2}:\\d{2}\"  # klog/glog: E0902 14:30\n    r\"|[DIWEFA], \\[\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}\"  # Ruby Logger: I, [2026-09-02T14:30\n    r\"|\\d{1,2}:\\d{2}:\\d{2}(?:[.,]\\d+)?(?:\\s|\\]|$)\"  # bare 15:03:53 / [15:03:53]\n    r\")\"\n)\n" +
+		"def search_dir_heading(text: str) -> str:\n    \"\"\"Fold grep ``path:line:content`` rows by DIRECTORY.\n\n    Consecutive rows whose path shares a parent directory collapse to that\n    directory once (a header ending in ``/``), then ``base:line:content`` rows\n    beneath it. Complements :func:`search_heading` (which factors a repeated\n    *file*): this factors a repeated *directory* across distinct files — the\n    common ``grep -rn`` case where each file has a single match, so file-heading\n    saves nothing but the shared directory repeats on every row. Rows whose path\n    has no ``/`` pass through untouched. Exactly reversed by\n    :func:`search_dir_unheading`; ``compact_lossless`` verifies the round-trip.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    for line in lines:\n        m = None if _TIMESTAMP_ROW_RE.match(line) else _GREP_ROW_RE.match(line)\n        if m and \"/\" in m.group(\"path\"):\n            path = m.group(\"path\")\n            cut = path.rindex(\"/\") + 1\n            dir_part, base = path[:cut], path[cut:]\n            if dir_part != current_dir:\n                out.append(dir_part)\n                current_dir = dir_part\n            out.append(f\"{base}:{m.group('line')}:{m.group('content')}\")\n        else:\n            out.append(line)\n            current_dir = None\n    return _join(out, had_trailing)\n\n\ndef search_dir_unheading(text: str) -> str:\n    \"\"\"Exact inverse of :func:`search_dir_heading`.\n\n    A *header* is a line ending in ``/`` immediately followed by a\n    ``base:line:content`` data row; it is consumed and re-prefixed onto each\n    following data row until a non-data line appears.\n    \"\"\"\n    lines, had_trailing = _split_keep_trailing(text)\n    if not lines:\n        return text\n    out: list[str] = []\n    current_dir: str | None = None\n    n = len(lines)\n    i = 0\n    while i < n:\n        line = lines[i]\n        data = _DIR_DATA_RE.match(line)\n        if current_dir is not None and data:\n            out.append(f\"{current_dir}{line}\")\n            i += 1\n            continue\n        if line.endswith(\"/\") and i + 1 < n and _DIR_DATA_RE.match(lines[i + 1]):\n            current_dir = line\n            i += 1\n            continue\n        current_dir = None\n        out.append(line)\n        i += 1\n    return _join(out, had_trailing)\n\n        if kind == \"search\":\n            # Two independent folds; keep the smaller that round-trips exactly.\n            # search_heading factors a repeated FILE (many matches in one file);\n            # search_dir_heading factors a repeated DIRECTORY (one match each\n            # across many files in a dir — the grep -rn case the file fold misses).\n            best = content\n            for candidate, inverse in (\n                (search_heading(content), search_unheading),\n                (search_dir_heading(content), search_dir_unheading),\n            ):\n                if inverse(candidate) == content and _smaller(candidate, best):\n                    best = candidate\n            return best\n"
+	if err := os.WriteFile(lossless045Path, []byte(lossless045Src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := patchCloudCodeLosslessWindows(lossless045Path); err != nil || !changed {
+		t.Fatalf("patchCloudCodeLosslessWindows on 0.45 layout failed: changed=%v err=%v", changed, err)
+	}
+	if changedAgain, err := patchCloudCodeLosslessWindows(lossless045Path); err != nil || changedAgain {
+		t.Fatalf("expected idempotent patchCloudCodeLosslessWindows on 0.45 layout, changed=%v err=%v", changedAgain, err)
+	}
+	out045, err := os.ReadFile(lossless045Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(out045), "[IWEF]") != 1 || !strings.Contains(string(out045), "Tomcat OneLineFormatter") {
+		t.Fatalf("unexpected 0.45 lossless_compaction.py result:\n%s", out045)
+	}
 }
 
 func TestPatchCloudCodeRealSitePackagesInTempDir(t *testing.T) {

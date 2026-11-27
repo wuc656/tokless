@@ -107,6 +107,9 @@ func Which(bin string) string {
 		if dir == "" {
 			continue
 		}
+		if len(exts) > 1 && missingExecutablePrefix(dir, bin, exts) {
+			continue
+		}
 		for _, ext := range exts {
 			p := filepath.Join(dir, bin+ext)
 			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {

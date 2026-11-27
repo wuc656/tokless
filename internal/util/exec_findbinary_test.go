@@ -92,3 +92,24 @@ func TestWhichWithExtensionOnWindows(t *testing.T) {
 		t.Errorf("Which(\"git\") = %q, want %q", got, binPath)
 	}
 }
+
+func TestWhichSeesNewWindowsCandidatesInPATHEXTOrder(t *testing.T) {
+	if !IsWin {
+		t.Skip("Windows executable lookup")
+	}
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	t.Setenv("PATHEXT", ".CMD;.EXE")
+	if got := Which("probe"); got != "" {
+		t.Fatalf("unexpected candidate %q", got)
+	}
+	for _, ext := range []string{".EXE", ".CMD"} {
+		want := filepath.Join(dir, "probe"+ext)
+		if err := os.WriteFile(want, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if got := Which("probe"); got != want {
+			t.Fatalf("Which returned %q after creating %q", got, want)
+		}
+	}
+}

@@ -65,6 +65,17 @@ func withUnwireStub(t *testing.T, toolID, agentID string, fn core.AgentFn) {
 
 func seedInitEnv(t *testing.T) {
 	t.Helper()
+	// Context-Mode needs Node and npm; agent discovery uses the test fixtures.
+	var dirs []string
+	for _, bin := range []string{"node", "npm"} {
+		if p := util.Which(bin); p != "" {
+			dir := filepath.Dir(p)
+			if len(dirs) == 0 || dirs[0] != dir {
+				dirs = append(dirs, dir)
+			}
+		}
+	}
+	t.Setenv("PATH", strings.Join(dirs, string(os.PathListSeparator)))
 	t.Setenv("TOKLESS_TEST", "1")
 	t.Setenv("TOKLESS_INSTALLER_RUN", "1")
 }

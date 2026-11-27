@@ -181,3 +181,65 @@ func TestWhichNpmGlobalPrefersNpmPrefixOverPath(t *testing.T) {
 		t.Fatalf("whichNpmGlobal() = %q, want npmPrefix bin %q (over PATH %q)", got, want, pathBin)
 	}
 }
+
+func TestCodegraphPathConflictIgnoresSameDirAndNvmShim(t *testing.T) {
+	dir := t.TempDir()
+	if !sameCodegraphInstallDir(filepath.Join(dir, "codegraph.EXE"), filepath.Join(dir, "codegraph.cmd")) {
+		t.Fatal("same directory .EXE and .cmd should not be treated as a conflict")
+	}
+	if IsWin {
+		if !sameCodegraphInstallDir(
+			`C:\Users\u\AppData\Local\Author Software\nvm\.nodejs\codegraph.EXE`,
+			`C:\Users\u\AppData\Local\Author Software\nvm\installs\v26.10.0\codegraph.cmd`,
+		) {
+			t.Fatal("nvm .nodejs shim and installs/<ver>/codegraph.cmd should not conflict")
+		}
+
+		// Same directory with different versions must STILL report a conflict.
+		home := t.TempDir()
+		SetHomeOverride(home)
+		defer SetHomeOverride("")
+		prefix := t.TempDir()
+		binDir := npmGlobalBinDir(prefix, IsWin)
+		cmdBin := fakeCodegraphCmdIn(t, binDir, "1.6.4")
+		batBin := filepath.Join(binDir, "codegraph.bat")
+		if err := os.WriteFile(batBin, []byte("@echo off\r\necho 1.6.2\r\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		pathVal := binDir
+		if sysRoot := os.Getenv("SystemRoot"); sysRoot != "" {
+			pathVal += ";" + filepath.Join(sysRoot, "System32")
+		}
+		t.Setenv("PATH", pathVal)
+		t.Setenv("PATHEXT", ".BAT;.CMD;.EXE")
+		t.Setenv("npm_config_prefix", "")
+		t.Setenv("NPM_CONFIG_PREFIX", "")
+		orig := npmPrefix
+		npmPrefix = func() string { return prefix }
+		defer func() { npmPrefix = orig }()
+
+		shadowed, active := CodegraphPathConflict()
+		if !sameExecutablePath(shadowed, batBin) || !sameExecutablePath(active, cmdBin) {
+			t.Fatalf("same-dir version mismatch: CodegraphPathConflict() = (%q, %q), want (%q, %q)", shadowed, active, batBin, cmdBin)
+		}
+
+		// Same directory with prerelease vs release version must ALSO report a conflict.
+		if err := os.WriteFile(batBin, []byte("@echo off\r\necho 1.6.4-beta.1\r\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", pathVal)
+		shadowed, active = CodegraphPathConflict()
+		if !sameExecutablePath(shadowed, batBin) || !sameExecutablePath(active, cmdBin) {
+			t.Fatalf("same-dir prerelease mismatch: CodegraphPathConflict() = (%q, %q), want (%q, %q)", shadowed, active, batBin, cmdBin)
+		}
+
+		// Same directory with matching version must NOT report a conflict.
+		if err := os.WriteFile(batBin, []byte("@echo off\r\necho 1.6.4\r\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", pathVal)
+		if s, a := CodegraphPathConflict(); s != "" || a != "" {
+			t.Fatalf("same-dir matching version: CodegraphPathConflict() = (%q, %q), want empty", s, a)
+		}
+	}
+}

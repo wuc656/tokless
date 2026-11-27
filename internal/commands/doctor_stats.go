@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HoangP8/tokless/internal/util"
@@ -323,37 +324,50 @@ func toolStatsBinary(tool string) string {
 
 func doctorToolStats(projectDir string, isProject bool) map[string][]string {
 	stats := make(map[string][]string)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 	for _, tool := range []string{"headroom", "rtk", "codegraph", "context-mode"} {
-		if tool == "context-mode" {
-			if toolStatsBinary(tool) != "" {
-				stats[tool] = contextModeStats(util.Home())
+		tool := tool
+		if tool == "codegraph" && !isProject {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var rows []string
+			switch tool {
+			case "context-mode":
+				if toolStatsBinary(tool) != "" {
+					rows = contextModeStats(util.Home())
+				}
+			case "headroom":
+				if toolStatsBinary(tool) != "" {
+					rows = headroomStatsSummary()
+				}
+			default:
+				bin := toolStatsBinary(tool)
+				if bin == "" {
+					return
+				}
+				args := []string{"gain"}
+				if tool == "codegraph" {
+					args = []string{"status", "--json", projectDir}
+				}
+				out, err := runDoctorCommand(bin, args...)
+				if err != nil {
+					rows = []string{statusInfo("unavailable")}
+				} else {
+					rows = labelledStats(tool, out)
+				}
 			}
-			continue
-		}
-		bin := toolStatsBinary(tool)
-		if bin == "" {
-			continue
-		}
-		var args []string
-		switch tool {
-		case "headroom":
-			stats[tool] = headroomStatsSummary()
-			continue
-		case "rtk":
-			args = []string{"gain"}
-		case "codegraph":
-			if !isProject {
-				continue
+			if rows != nil {
+				mu.Lock()
+				stats[tool] = rows
+				mu.Unlock()
 			}
-			args = []string{"status", "--json", projectDir}
-		}
-		out, err := runDoctorCommand(bin, args...)
-		if err != nil {
-			stats[tool] = []string{statusInfo("unavailable")}
-			continue
-		}
-		stats[tool] = labelledStats(tool, out)
+		}()
 	}
+	wg.Wait()
 	return stats
 }
 
@@ -470,11 +484,22 @@ func headroomStatsSummary() []string {
 	if bin == "" {
 		return []string{util.C.Dim("unavailable")}
 	}
-	raw, err := runDoctorCommandTimeout(20*time.Second, bin, "savings", "--json")
+	var raw, perfRaw string
+	var err, perfErr error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		raw, err = runDoctorCommandTimeout(20*time.Second, bin, "savings", "--json")
+	}()
+	go func() {
+		defer wg.Done()
+		perfRaw, perfErr = runDoctorCommandTimeout(20*time.Second, bin, "perf", "--format", "json", "--hours", "720")
+	}()
+	wg.Wait()
 	if err != nil {
 		return []string{util.C.Dim("unavailable")}
 	}
-	perfRaw, perfErr := runDoctorCommandTimeout(20*time.Second, bin, "perf", "--format", "json", "--hours", "720")
 	if perfErr != nil {
 		perfRaw = ""
 	}

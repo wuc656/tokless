@@ -333,20 +333,52 @@ func gatherVersions(force bool, ids ...string) map[string]VersionInfo {
 	if len(ids) == 0 {
 		ids = toolIDs
 	}
-	// Latest (slow, network) is cached; installed (fast, local) is always live.
-	latest := cachedLatestFor(force, ids)
+	// Latest (network) and installed (local CLI/npm/uv) probes run concurrently.
+	var latest map[string]*string
+	installedMap := make(map[string]*string, len(ids))
+	presentMap := make(map[string]bool, len(ids))
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		latest = cachedLatestFor(force, ids)
+	}()
+
+	for _, id := range ids {
+		if _, ok := versionChannels[id]; !ok {
+			continue
+		}
+		id := id
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			inst := InstalledVersionFor(id)
+			pres := inst != nil
+			if id == "headroom" {
+				pres = HeadroomInstalled()
+			}
+			mu.Lock()
+			installedMap[id] = inst
+			presentMap[id] = pres
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
 	out := map[string]VersionInfo{}
 	for _, id := range ids {
 		ch, ok := versionChannels[id]
 		if !ok {
 			continue
 		}
-		installed := InstalledVersionFor(id)
-		present := installed != nil
-		if id == "headroom" {
-			present = HeadroomInstalled()
+		out[id] = VersionInfo{
+			Installed: installedMap[id],
+			Latest:    latest[id],
+			Channel:   ch,
+			Present:   presentMap[id],
 		}
-		out[id] = VersionInfo{Installed: installed, Latest: latest[id], Channel: ch, Present: present}
 	}
 	return out
 }

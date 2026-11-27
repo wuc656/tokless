@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 // ExecResult mirrors the TS { code, stdout, stderr } shape.
@@ -143,8 +146,12 @@ func FindBinary(bin string, extraDirs []string) string {
 	return ""
 }
 
+var pathEnvMu sync.Mutex
+
 // PrependProcessPath puts dir at the front of this process's PATH (idempotent).
 func PrependProcessPath(dir string) {
+	pathEnvMu.Lock()
+	defer pathEnvMu.Unlock()
 	sep := ":"
 	if IsWin {
 		sep = ";"
@@ -362,7 +369,50 @@ func CodegraphPathConflict() (shadowedPath, activePath string) {
 	if sameExecutablePath(onPath, active) {
 		return "", ""
 	}
+	if sameCodegraphInstallDir(onPath, active) {
+		va := codegraphBinaryVersion(onPath)
+		vb := codegraphBinaryVersion(active)
+		if va != "" && va == vb {
+			return "", ""
+		}
+	}
 	return onPath, active
+}
+
+var codegraphSemverRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
+
+func codegraphBinaryVersion(p string) string {
+	cmd, args := codegraphProbeCommand(p)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	r := Run(cmd, append(append([]string{}, args...), "--version"), RunOptions{Capture: true, Ctx: ctx})
+	if r.Code != 0 {
+		return ""
+	}
+	return codegraphSemverRe.FindString(r.Stdout)
+}
+
+func sameCodegraphInstallDir(a, b string) bool {
+	realDir := func(p string) string {
+		d := filepath.Dir(p)
+		if r, err := filepath.EvalSymlinks(d); err == nil {
+			d = r
+		} else if abs, err := filepath.Abs(d); err == nil {
+			d = abs
+		}
+		return filepath.Clean(d)
+	}
+	da, db := realDir(a), realDir(b)
+	if IsWin {
+		if strings.EqualFold(da, db) {
+			return true
+		}
+		// nvm-windows (.nodejs\codegraph.EXE shim -> installs\<ver>\codegraph.cmd)
+		if strings.EqualFold(filepath.Base(da), ".nodejs") && strings.Contains(strings.ToLower(db), `\installs\`) {
+			return true
+		}
+	}
+	return da == db
 }
 
 func sameExecutablePath(a, b string) bool {

@@ -100,11 +100,13 @@ func RunDoctor(offline, fix bool) int {
 
 	shadowedCodegraph, activeCodegraph := util.CodegraphPathConflict()
 	toolManifests := core.ListTools()
+	allAgents := core.ListAgents()
+	installedIDs, _ := detectAgents(allAgents)
 
 	if fix {
 		toolindex.ConfigureInstructionConflicts(true)
-		for _, agent := range core.ListAgents() {
-			if !agent.Detect().Installed {
+		for _, agent := range allAgents {
+			if !installedIDs[agent.ID] {
 				continue
 			}
 			missing := doctorMissingTools(toolManifests, agent.ID)
@@ -151,9 +153,17 @@ func RunDoctor(offline, fix bool) int {
 		toolindex.ConfigureInstructionConflicts(false)
 	}
 
+	var versionsCh chan map[string]util.VersionInfo
+	if !offline && os.Getenv("TOKLESS_TEST") != "1" {
+		versionsCh = make(chan map[string]util.VersionInfo, 1)
+		go func() {
+			versionsCh <- util.GatherVersions()
+		}()
+	}
+
 	var reports []agentReport
-	for _, agent := range core.ListAgents() {
-		if !agent.Detect().Installed {
+	for _, agent := range allAgents {
+		if !installedIDs[agent.ID] {
 			continue
 		}
 		missing := doctorMissingTools(toolManifests, agent.ID)
@@ -312,20 +322,25 @@ func RunDoctor(offline, fix bool) int {
 	}
 
 	outdated := -1
-	if !offline && os.Getenv("TOKLESS_TEST") != "1" {
-		statusLine := util.TreeStem() + util.C.Gray("checking for updates…")
-		if stdoutTTY() {
-			fmt.Print(statusLine)
-		} else {
-			util.L.Raw(statusLine)
+	if versionsCh != nil {
+		var v map[string]util.VersionInfo
+		select {
+		case v = <-versionsCh:
+		default:
+			statusLine := util.TreeStem() + util.C.Gray("checking for updates…")
+			if stdoutTTY() {
+				fmt.Print(statusLine)
+			} else {
+				util.L.Raw(statusLine)
+			}
+			v = <-versionsCh
+			if stdoutTTY() {
+				fmt.Print(util.EraseStyledLine(statusLine))
+			} else {
+				util.L.Raw("")
+			}
 		}
-		v := util.GatherVersions()
 		outdated = util.CountOutdated(v)
-		if stdoutTTY() {
-			fmt.Print(util.EraseStyledLine(statusLine))
-		} else {
-			util.L.Raw("")
-		}
 
 		util.TreeCorner("Tools")
 		listToolVersions(toolManifests, v, true)
@@ -868,12 +883,16 @@ func toolVersionDisplayLine(tool *core.ToolManifest, info util.VersionInfo) stri
 }
 
 func listToolVersionLine(tool *core.ToolManifest, info util.VersionInfo, widths ...int) string {
+	path := tildePath(util.InstalledPathFor(tool.ID))
+	deps := strings.Join(doctorToolDependencies(tool), ", ")
+	return renderToolVersionLine(tool, info, path, deps, widths...)
+}
+
+func renderToolVersionLine(tool *core.ToolManifest, info util.VersionInfo, path, deps string, widths ...int) string {
 	line := toolVersionDisplayLine(tool, info)
 	if line == "" {
 		return ""
 	}
-	path := tildePath(util.InstalledPathFor(tool.ID))
-	deps := strings.Join(doctorToolDependencies(tool), ", ")
 	if deps == "" {
 		deps = "none"
 	}
@@ -935,7 +954,13 @@ func doctorToolDependencies(tool *core.ToolManifest) []string {
 
 // listToolVersions prints one row per tool.
 func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo, tree bool) {
+	type toolVersionRow struct {
+		tool *core.ToolManifest
+		path string
+		deps string
+	}
 	nameWidth, versionWidth, pathWidth, depsWidth := 0, 0, 0, 0
+	prepared := make([]toolVersionRow, 0, len(tools))
 	for _, tool := range tools {
 		if tool.InstructionOnly || toolVersionDisplayLine(tool, v[tool.ID]) == "" {
 			continue
@@ -954,18 +979,18 @@ func listToolVersions(tools []*core.ToolManifest, v map[string]util.VersionInfo,
 		if len(version) > versionWidth {
 			versionWidth = len(version)
 		}
-		if path := util.InstalledPathFor(tool.ID); len(tildePath(path)) > pathWidth {
-			pathWidth = len(tildePath(path))
+		path := tildePath(util.InstalledPathFor(tool.ID))
+		if len(path) > pathWidth {
+			pathWidth = len(path)
 		}
-		if width := len(strings.Join(doctorToolDependencies(tool), ", ")); width > depsWidth {
-			depsWidth = width
+		deps := strings.Join(doctorToolDependencies(tool), ", ")
+		if len(deps) > depsWidth {
+			depsWidth = len(deps)
 		}
+		prepared = append(prepared, toolVersionRow{tool: tool, path: path, deps: deps})
 	}
-	for _, tool := range tools {
-		if tool.InstructionOnly {
-			continue
-		}
-		line := listToolVersionLine(tool, v[tool.ID], nameWidth, versionWidth, pathWidth, depsWidth)
+	for _, row := range prepared {
+		line := renderToolVersionLine(row.tool, v[row.tool.ID], row.path, row.deps, nameWidth, versionWidth, pathWidth, depsWidth)
 		if line == "" {
 			continue
 		}

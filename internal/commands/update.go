@@ -363,10 +363,11 @@ func resyncWiring(tools []*core.ToolManifest) {
 func resyncWiringOpts(tools []*core.ToolManifest, ro core.RunOpts) map[string]error {
 	errs := map[string]error{}
 	agents := core.ListAgents()
+	installedIDs, _ := detectAgents(agents)
 	for _, tool := range tools {
 		for _, agent := range agents {
 			wire, ok := tool.WireFor[agent.ID]
-			if !ok || !agent.Detect().Installed {
+			if !ok || !installedIDs[agent.ID] {
 				continue
 			}
 			if verify, vok := tool.WiredAnyFor[agent.ID]; vok {
@@ -409,8 +410,10 @@ func resyncInstructionWiring(ids ...string) {
 			instrTools = append(instrTools, tool)
 		}
 	}
-	for _, agent := range core.ListAgents() {
-		if !agent.Detect().Installed {
+	allAgents := core.ListAgents()
+	installedIDs, _ := detectAgents(allAgents)
+	for _, agent := range allAgents {
+		if !installedIDs[agent.ID] {
 			continue
 		}
 		_ = util.WithSilencedLogs(func() error {

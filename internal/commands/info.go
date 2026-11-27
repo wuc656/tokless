@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HoangP8/tokless/internal/agents"
@@ -26,6 +27,38 @@ func proxyLaneRow(label string, wired bool, addr string) string {
 func RunInfo() int {
 	cmdHeader("info", "install + paths")
 
+	allAgents := core.ListAgents()
+	allTools := core.ListTools()
+
+	agentsCh := make(chan map[string]bool, 1)
+	go func() {
+		installedIDs, _ := detectAgents(allAgents)
+		agentsCh <- installedIDs
+	}()
+
+	type infoToolRow struct {
+		version *string
+		path    string
+	}
+	toolRows := make([]infoToolRow, len(allTools))
+	var toolsWg sync.WaitGroup
+	for i, tool := range allTools {
+		if tool.InstructionOnly {
+			continue
+		}
+		i, tool := i, tool
+		toolsWg.Add(1)
+		go func() {
+			defer toolsWg.Done()
+			v := util.InstalledVersionFor(tool.ID)
+			var p string
+			if v != nil {
+				p = util.InstalledPathFor(tool.ID)
+			}
+			toolRows[i] = infoToolRow{version: v, path: p}
+		}()
+	}
+
 	rec, exact := util.InstallInfo()
 	util.TreeTop("Tokless")
 	util.TreeLeaf(paintKey(padEnd("version", 10)) + util.C.Bold(paintVer(util.ToklessVersion())))
@@ -34,10 +67,11 @@ func RunInfo() int {
 	util.TreeLeaf(paintKey(padEnd("platform", 10)) + util.C.Blue(runtime.GOOS+"/"+runtime.GOARCH))
 	util.TreeClose()
 
+	installedIDs := <-agentsCh
 	util.TreeCorner("Agents")
 	nAgents := 0
-	for _, agent := range core.ListAgents() {
-		if !agent.Detect().Installed {
+	for _, agent := range allAgents {
+		if !installedIDs[agent.ID] {
 			continue
 		}
 		nAgents++
@@ -104,15 +138,17 @@ func RunInfo() int {
 	}
 	util.TreeClose()
 
+	toolsWg.Wait()
 	util.TreeCorner("Tools")
-	for _, tool := range core.ListTools() {
+	for i, tool := range allTools {
 		if tool.InstructionOnly {
 			continue
 		}
-		if v := util.InstalledVersionFor(tool.ID); v != nil {
-			row := paintName(padEnd(tool.ID, 14)) + paintVer(padEnd("v"+*v, 10))
-			if p := util.InstalledPathFor(tool.ID); p != "" {
-				row += paintPath(tildePath(p))
+		res := toolRows[i]
+		if res.version != nil {
+			row := paintName(padEnd(tool.ID, 14)) + paintVer(padEnd("v"+*res.version, 10))
+			if res.path != "" {
+				row += paintPath(tildePath(res.path))
 			}
 			util.TreeLeaf(util.C.Green(util.Sym.Check) + " " + row)
 		} else {

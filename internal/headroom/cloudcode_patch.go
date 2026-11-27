@@ -2,6 +2,7 @@ package headroom
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,14 +24,85 @@ const (
 	cloudCodeSmartCrusherMarker     = "tokless:smart_crusher_minify_guard_v1"
 )
 
-func cloudCodePatchRootsFor(rel ...string) []string {
+func cloudCodePatchRootsInDirs(dirs []string, rel ...string) []string {
 	var patterns []string
-	for _, tools := range util.HeadroomUVToolDirs() {
+	for _, tools := range dirs {
 		posixArgs := append([]string{tools, "headroom-ai", "lib", "python*", "site-packages"}, rel...)
 		winArgs := append([]string{tools, "headroom-ai", "Lib", "site-packages"}, rel...)
 		patterns = append(patterns, filepath.Join(posixArgs...), filepath.Join(winArgs...))
 	}
 	return patterns
+}
+
+func cloudCodePatchRootsFor(rel ...string) []string {
+	return cloudCodePatchRootsInDirs(util.HeadroomUVToolDirs(), rel...)
+}
+
+func cloudCodeStatusToolDirs() []string {
+	managedTools := util.HeadroomPathsResolved().Tools
+	if util.Exists(filepath.Join(managedTools, "headroom-ai")) {
+		return []string{managedTools}
+	}
+	return util.HeadroomUVToolDirs()
+}
+
+// ShadowedGlobalUVHeadroomDirs returns global uv headroom-ai install directories that
+// are shadowed by Tokless's dedicated Headroom installation.
+func ShadowedGlobalUVHeadroomDirs() []string {
+	if util.IsRunningInTest() && !util.HasHomeOverride() {
+		return nil
+	}
+	managedTools := util.HeadroomPathsResolved().Tools
+	if !util.Exists(filepath.Join(managedTools, "headroom-ai")) {
+		return nil
+	}
+	var shadowed []string
+	for _, dir := range util.HeadroomUVToolDirs() {
+		if util.EqualPaths(dir, managedTools) {
+			continue
+		}
+		candidate := filepath.Join(dir, "headroom-ai")
+		if util.Exists(candidate) {
+			shadowed = append(shadowed, candidate)
+		}
+	}
+	return shadowed
+}
+
+// UninstallGlobalUVHeadroom removes redundant global uv headroom-ai installations while
+// leaving Tokless's dedicated Headroom installation untouched.
+func UninstallGlobalUVHeadroom() error {
+	if util.IsRunningInTest() || util.HasHomeOverride() {
+		return nil
+	}
+	shadowed := ShadowedGlobalUVHeadroomDirs()
+	if len(shadowed) == 0 {
+		return nil
+	}
+	uv := util.Which("uv")
+	if uv == "" {
+		if p := util.HeadroomPathsResolved().UV; util.Exists(p) {
+			uv = p
+		}
+	}
+	if uv == "" {
+		return fmt.Errorf("uv not found on PATH; run `uv tool uninstall headroom-ai` manually")
+	}
+	for _, pkgDir := range shadowed {
+		toolDir := filepath.Dir(pkgDir)
+		res := util.Run(uv, []string{"tool", "uninstall", "headroom-ai"}, util.RunOptions{
+			Capture: true,
+			Env:     []string{"UV_TOOL_DIR=" + toolDir},
+		})
+		if res.Code != 0 {
+			msg := strings.TrimSpace(res.Stderr)
+			if msg == "" {
+				msg = strings.TrimSpace(res.Stdout)
+			}
+			return fmt.Errorf("uv tool uninstall headroom-ai (%s): %s", toolDir, msg)
+		}
+	}
+	return nil
 }
 
 func cloudCodePatchRoots() []string {
@@ -356,40 +428,41 @@ func CloudCodePatchStatus() (applied, total int) {
 	if util.IsRunningInTest() && !util.HasHomeOverride() {
 		return 0, 0
 	}
+	dirs := cloudCodeStatusToolDirs()
 	checks := []struct {
 		patterns []string
 		markers  []string
 	}{
 		{
-			patterns: cloudCodePatchRoots(),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "proxy", "handlers", "gemini.py"),
 			markers:  []string{cloudCodePatchMarker, cloudCodeGeminiRoutingMarker, cloudCodeGeminiNonStreamMarker, cloudCodeGeminiFRLosslessMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "providers", "route_specs.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "providers", "route_specs.py"),
 			markers:  []string{cloudCodeRouteSpecsMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "providers", "cloudcode", "runtime.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "providers", "cloudcode", "runtime.py"),
 			markers:  []string{cloudCodeRuntimePatchMarker},
 		},
 		{
-			patterns: cloudCodeRoutesPatchRoots(),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "providers", "proxy_routes.py"),
 			markers:  []string{cloudCodeRoutesPatchMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "proxy", "handlers", "openai.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "proxy", "handlers", "openai.py"),
 			markers:  []string{cloudCodeStreamingPatchMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "transforms", "lossless_compaction.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "transforms", "lossless_compaction.py"),
 			markers:  []string{cloudCodeLosslessWindowsMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "cache", "prefix_tracker.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "cache", "prefix_tracker.py"),
 			markers:  []string{cloudCodePrefixTrackerMarker},
 		},
 		{
-			patterns: cloudCodePatchRootsFor("headroom", "transforms", "content_router.py"),
+			patterns: cloudCodePatchRootsInDirs(dirs, "headroom", "transforms", "content_router.py"),
 			markers:  []string{cloudCodeSmartCrusherMarker},
 		},
 	}

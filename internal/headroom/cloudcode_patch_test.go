@@ -688,3 +688,69 @@ func TestPatchCloudCodeRealSitePackagesInTempDir(t *testing.T) {
 		}
 	}
 }
+
+func TestCloudCodePatchStatusIgnoresShadowedGlobalUVCopy(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Setenv("HOME", home)
+	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	t.Setenv("APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	t.Setenv("UV_TOOL_DIR", "")
+	t.Cleanup(func() { util.SetHomeOverride("") })
+
+	siteRel := filepath.Join("lib", "python3.12", "site-packages")
+	if util.IsWin {
+		siteRel = filepath.Join("Lib", "site-packages")
+	}
+
+	// Managed Tokless Headroom install with all 11 patch markers.
+	managedSite := filepath.Join(util.HeadroomPathsResolved().Tools, "headroom-ai", siteRel)
+	for rel, content := range map[string]string{
+		filepath.Join("headroom", "proxy", "handlers", "gemini.py"):       cloudCodePatchMarker + "\n" + cloudCodeGeminiRoutingMarker + "\n" + cloudCodeGeminiNonStreamMarker + "\n" + cloudCodeGeminiFRLosslessMarker + "\n",
+		filepath.Join("headroom", "providers", "route_specs.py"):          cloudCodeRouteSpecsMarker + "\n",
+		filepath.Join("headroom", "providers", "cloudcode", "runtime.py"): cloudCodeRuntimePatchMarker + "\n",
+		filepath.Join("headroom", "providers", "proxy_routes.py"):         cloudCodeRoutesPatchMarker + "\n",
+		filepath.Join("headroom", "proxy", "handlers", "openai.py"):       cloudCodeStreamingPatchMarker + "\n",
+		filepath.Join("headroom", "transforms", "lossless_compaction.py"): cloudCodeLosslessWindowsMarker + "\n",
+		filepath.Join("headroom", "cache", "prefix_tracker.py"):           cloudCodePrefixTrackerMarker + "\n",
+		filepath.Join("headroom", "transforms", "content_router.py"):      cloudCodeSmartCrusherMarker + "\n",
+	} {
+		p := filepath.Join(managedSite, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Redundant legacy global uv install with 0 markers.
+	var globalToolsDir string
+	if util.IsWin {
+		globalToolsDir = filepath.Join(home, "AppData", "Roaming", "uv", "tools")
+	} else {
+		globalToolsDir = filepath.Join(home, ".local", "share", "uv", "tools")
+	}
+	globalSite := filepath.Join(globalToolsDir, "headroom-ai", siteRel)
+	for _, rel := range []string{
+		filepath.Join("headroom", "proxy", "handlers", "openai.py"),
+		filepath.Join("headroom", "transforms", "content_router.py"),
+	} {
+		p := filepath.Join(globalSite, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("# unpatched old headroom\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if applied, total := CloudCodePatchStatus(); total != 11 || applied != 11 {
+		t.Fatalf("CloudCodePatchStatus() = (%d, %d), want (11, 11) ignoring shadowed global uv copy", applied, total)
+	}
+	shadowed := ShadowedGlobalUVHeadroomDirs()
+	wantShadowed := filepath.Join(globalToolsDir, "headroom-ai")
+	if len(shadowed) != 1 || !util.EqualPaths(shadowed[0], wantShadowed) {
+		t.Fatalf("ShadowedGlobalUVHeadroomDirs() = %v, want [%s]", shadowed, wantShadowed)
+	}
+}

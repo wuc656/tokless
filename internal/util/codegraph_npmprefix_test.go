@@ -294,3 +294,16 @@ func TestWhichSkipsNonExecutableOnUnix(t *testing.T) {
 		t.Fatalf("FindBinary() = %q, want executable %q", got, execBin)
 	}
 }
+
+func TestIsNvmFirewallBlockedOutput(t *testing.T) {
+	sample := "NVM Firewall: Untrusted module 'codegraph' changed after running.\nEvent code: NVM4306\n"
+	if !isNvmFirewallBlockedOutput(sample, "") {
+		t.Fatal("expected NVM Firewall output to be detected")
+	}
+	if !isNvmFirewallBlockedOutput("", "Event code: NVM4306") {
+		t.Fatal("expected NVM4306 on stderr to be detected")
+	}
+	if isNvmFirewallBlockedOutput("1.6.4\n", "") {
+		t.Fatal("did not expect clean version output to match NVM Firewall")
+	}
+}

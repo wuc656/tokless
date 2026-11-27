@@ -3,6 +3,7 @@ package util
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -411,35 +412,81 @@ func ResolveCodegraphBin() string {
 // CodegraphPathConflict returns (shadowedPath, activePath) when a different
 // codegraph executable appears earlier on PATH than ResolveCodegraphBin().
 func CodegraphPathConflict() (shadowedPath, activePath string) {
+	shadowedPath, activePath, _ = CodegraphPathConflictDetail()
+	return shadowedPath, activePath
+}
+
+// CodegraphPathConflictDetail returns (shadowedPath, activePath, nvmFirewallBlocked),
+// distinguishing stale PATH conflicts from an NVM Firewall block on the active shim.
+func CodegraphPathConflictDetail() (shadowedPath, activePath string, nvmFirewallBlocked bool) {
 	onPath := Which("codegraph")
 	active := ResolveCodegraphBin()
 	if onPath == "" || active == "" {
-		return "", ""
+		return "", "", false
 	}
 	if sameExecutablePath(onPath, active) {
-		return "", ""
+		return "", "", false
 	}
 	if sameCodegraphInstallDir(onPath, active) {
-		va := codegraphBinaryVersion(onPath)
+		va, blocked := codegraphBinaryVersionProbe(onPath)
 		vb := codegraphBinaryVersion(active)
 		if va != "" && va == vb {
-			return "", ""
+			return "", "", false
+		}
+		if blocked {
+			return onPath, active, true
 		}
 	}
-	return onPath, active
+	return onPath, active, false
 }
 
 var codegraphSemverRe = regexp.MustCompile(`\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`)
 
-func codegraphBinaryVersion(p string) string {
+func isNvmFirewallBlockedOutput(stdout, stderr string) bool {
+	combined := strings.ToLower(stdout + "\n" + stderr)
+	return strings.Contains(combined, "nvm firewall") || strings.Contains(combined, "nvm4306")
+}
+
+func codegraphBinaryVersionProbe(p string) (string, bool) {
 	cmd, args := codegraphProbeCommand(p)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	r := Run(cmd, append(append([]string{}, args...), "--version"), RunOptions{Capture: true, Ctx: ctx})
 	if r.Code != 0 {
-		return ""
+		return "", isNvmFirewallBlockedOutput(r.Stdout, r.Stderr)
 	}
-	return codegraphSemverRe.FindString(r.Stdout)
+	return codegraphSemverRe.FindString(r.Stdout), false
+}
+
+func codegraphBinaryVersion(p string) string {
+	ver, _ := codegraphBinaryVersionProbe(p)
+	return ver
+}
+
+// TrustCodegraphInNvmFirewall runs `nvm firewall trust module codegraph` and `nvm reshim`.
+func TrustCodegraphInNvmFirewall() error {
+	if IsRunningInTest() || HasHomeOverride() {
+		return nil
+	}
+	nvm := Which("nvm")
+	if nvm == "" {
+		return fmt.Errorf("nvm not found on PATH; run `nvm firewall trust module codegraph && nvm reshim`")
+	}
+	if res := Run(nvm, []string{"firewall", "trust", "module", "codegraph"}, RunOptions{Capture: true}); res.Code != 0 {
+		msg := strings.TrimSpace(res.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(res.Stdout)
+		}
+		return fmt.Errorf("nvm firewall trust module codegraph: %s", msg)
+	}
+	if res := Run(nvm, []string{"reshim"}, RunOptions{Capture: true}); res.Code != 0 {
+		msg := strings.TrimSpace(res.Stderr)
+		if msg == "" {
+			msg = strings.TrimSpace(res.Stdout)
+		}
+		return fmt.Errorf("nvm reshim: %s", msg)
+	}
+	return nil
 }
 
 func sameCodegraphInstallDir(a, b string) bool {

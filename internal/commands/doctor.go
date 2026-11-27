@@ -98,7 +98,7 @@ func toolConfigLocation(agentID, toolID string) (path, key string) {
 func RunDoctor(offline, fix bool) int {
 	cmdHeader("doctor", "health check")
 
-	shadowedCodegraph, activeCodegraph := util.CodegraphPathConflict()
+	shadowedCodegraph, activeCodegraph, codegraphNvmBlocked := util.CodegraphPathConflictDetail()
 	toolManifests := core.ListTools()
 	allAgents := core.ListAgents()
 	installedIDs, _ := detectAgents(allAgents)
@@ -151,6 +151,28 @@ func RunDoctor(offline, fix bool) int {
 			}
 		}
 		toolindex.ConfigureInstructionConflicts(false)
+		if shadowed := headroompkg.ShadowedGlobalUVHeadroomDirs(); len(shadowed) > 0 {
+			shouldUninstall := true
+			if util.IsInteractive() {
+				shouldUninstall = util.Confirm(fmt.Sprintf("Remove redundant global uv headroom-ai (%s)?", tildePath(shadowed[0])), true)
+			}
+			if shouldUninstall {
+				util.L.Sub("fixing headroom: removing redundant global uv headroom-ai…")
+				if err := headroompkg.UninstallGlobalUVHeadroom(); err != nil {
+					util.L.Warn(err.Error())
+				}
+			}
+		}
+		if codegraphNvmBlocked && util.IsInteractive() {
+			if util.Confirm("CodeGraph shim is blocked by NVM Firewall. Run `nvm firewall trust module codegraph` and `nvm reshim` now?", true) {
+				util.L.Sub("fixing codegraph: trusting module in NVM Firewall…")
+				if err := util.TrustCodegraphInNvmFirewall(); err != nil {
+					util.L.Warn(err.Error())
+				} else {
+					shadowedCodegraph, activeCodegraph, codegraphNvmBlocked = util.CodegraphPathConflictDetail()
+				}
+			}
+		}
 	}
 
 	var versionsCh chan map[string]util.VersionInfo
@@ -345,7 +367,11 @@ func RunDoctor(offline, fix bool) int {
 		util.TreeCorner("Tools")
 		listToolVersions(toolManifests, v, true)
 		if shadowedCodegraph != "" {
-			util.TreeLeaf(statusWarn("codegraph PATH conflict: " + tildePath(shadowedCodegraph) + " shadows " + tildePath(activeCodegraph) + " — remove stale PATH entry"))
+			if codegraphNvmBlocked {
+				util.TreeLeaf(statusWarn("codegraph blocked by NVM Firewall (" + tildePath(shadowedCodegraph) + ") — run: nvm firewall trust module codegraph && nvm reshim"))
+			} else {
+				util.TreeLeaf(statusWarn("codegraph PATH conflict: " + tildePath(shadowedCodegraph) + " shadows " + tildePath(activeCodegraph) + " — remove stale PATH entry"))
+			}
 		}
 		util.TreeClose()
 	}
@@ -374,6 +400,9 @@ func doctorProxyPorts(reports []agentReport, mainRunning bool) []doctorPort {
 		} else {
 			main.direct = append(main.direct, statusWarn(fmt.Sprintf("Cloud Code patches %d/%d applied — run tokless proxy up", applied, total)))
 		}
+	}
+	if shadowed := headroompkg.ShadowedGlobalUVHeadroomDirs(); len(shadowed) > 0 {
+		main.direct = append(main.direct, statusWarn(fmt.Sprintf("redundant global uv headroom-ai (%s) — run tokless doctor --fix or uv tool uninstall headroom-ai", tildePath(shadowed[0]))))
 	}
 	ports := []doctorPort{main}
 	hasRoutes := false

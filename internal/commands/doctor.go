@@ -98,6 +98,7 @@ func toolConfigLocation(agentID, toolID string) (path, key string) {
 func RunDoctor(offline, fix bool) int {
 	cmdHeader("doctor", "health check")
 
+	shadowedCodegraph, activeCodegraph := util.CodegraphPathConflict()
 	toolManifests := core.ListTools()
 
 	if fix {
@@ -328,6 +329,9 @@ func RunDoctor(offline, fix bool) int {
 
 		util.TreeCorner("Tools")
 		listToolVersions(toolManifests, v, true)
+		if shadowedCodegraph != "" {
+			util.TreeLeaf(statusWarn("codegraph PATH conflict: " + tildePath(shadowedCodegraph) + " shadows " + tildePath(activeCodegraph) + " — remove stale PATH entry"))
+		}
 		util.TreeClose()
 	}
 

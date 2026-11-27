@@ -711,3 +711,21 @@ var codegraph = &core.ToolManifest{
 		"amp": func() *bool { return core.BoolPtr(mcpHas("amp", "codegraph", true)) }, "kimi": func() *bool { return core.BoolPtr(mcpHas("kimi", "codegraph", true)) }, "cmd": func() *bool { return core.BoolPtr(mcpHas("cmd", "codegraph", true)) }, "dsh": func() *bool { return core.BoolPtr(mcpHas("dsh", "codegraph", true)) }, "zcode": func() *bool { return core.BoolPtr(mcpHas("zcode", "codegraph", true)) },
 	},
 }
+
+// CodegraphSpawnStale reports a tokless-owned codegraph MCP entry whose command
+// or path no longer matches the current resolved spawn (e.g. stale PATH binary).
+func CodegraphSpawnStale() bool {
+	for id := range codegraph.WireFor {
+		a := core.GetAgent(id)
+		if a == nil || !a.Detect().Installed {
+			continue
+		}
+		if id == "claude" && agents.ClaudeMcpRefusal("codegraph") != "" {
+			continue
+		}
+		if mcpHas(id, "codegraph", true) && !mcpHas(id, "codegraph", false) {
+			return true
+		}
+	}
+	return false
+}

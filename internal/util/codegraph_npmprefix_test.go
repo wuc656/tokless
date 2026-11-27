@@ -95,3 +95,89 @@ func TestPickMcpSpawnContextModeCustomNpmPrefix(t *testing.T) {
 		t.Fatalf("want absolute %q and no npx fallback, got %v", want, spawn.Args)
 	}
 }
+
+func fakeCodegraphCmdIn(t *testing.T, dir, version string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if IsWin {
+		p := filepath.Join(dir, "codegraph.cmd")
+		body := "@echo off\r\necho " + version + "\r\n"
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	p := filepath.Join(dir, "codegraph")
+	body := "#!/bin/sh\necho " + version + "\n"
+	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestResolveCodegraphBinPrefersNpmPrefixOverPath(t *testing.T) {
+	home := t.TempDir()
+	SetHomeOverride(home)
+	defer SetHomeOverride("")
+
+	pathDir := t.TempDir()
+	pathBin := fakeCodegraphCmdIn(t, pathDir, "1.6.2")
+	pathVal := pathDir
+	if IsWin {
+		if sysRoot := os.Getenv("SystemRoot"); sysRoot != "" {
+			pathVal += ";" + filepath.Join(sysRoot, "System32")
+		}
+	}
+	t.Setenv("PATH", pathVal)
+	t.Setenv("npm_config_prefix", "")
+	t.Setenv("NPM_CONFIG_PREFIX", "")
+
+	prefix := t.TempDir()
+	want := fakeCodegraphCmdIn(t, npmGlobalBinDir(prefix, IsWin), "1.6.4")
+
+	orig := npmPrefix
+	npmPrefix = func() string { return prefix }
+	defer func() { npmPrefix = orig }()
+
+	got := ResolveCodegraphBin()
+	if !sameExecutablePath(got, want) {
+		t.Fatalf("ResolveCodegraphBin() = %q, want npmPrefix bin %q (over PATH %q)", got, want, pathBin)
+	}
+
+	// Restore PATH to simulate initial process PATH before PrependProcessPath mutated it.
+	t.Setenv("PATH", pathVal)
+	shadowed, active := CodegraphPathConflict()
+	if !sameExecutablePath(shadowed, pathBin) || !sameExecutablePath(active, want) {
+		t.Fatalf("CodegraphPathConflict() = (%q, %q), want (%q, %q)", shadowed, active, pathBin, want)
+	}
+}
+
+func TestWhichNpmGlobalPrefersNpmPrefixOverPath(t *testing.T) {
+	home := t.TempDir()
+	SetHomeOverride(home)
+	defer SetHomeOverride("")
+
+	pathDir := t.TempDir()
+	ctxName := "context-mode"
+	if IsWin {
+		ctxName = "context-mode.cmd"
+	}
+	pathBin := fakeBinIn(t, pathDir, ctxName)
+	t.Setenv("PATH", pathDir)
+	t.Setenv("npm_config_prefix", "")
+	t.Setenv("NPM_CONFIG_PREFIX", "")
+
+	prefix := t.TempDir()
+	want := fakeBinIn(t, npmGlobalBinDir(prefix, IsWin), ctxName)
+
+	orig := npmPrefix
+	npmPrefix = func() string { return prefix }
+	defer func() { npmPrefix = orig }()
+
+	got := whichNpmGlobal("context-mode")
+	if !sameExecutablePath(got, want) {
+		t.Fatalf("whichNpmGlobal() = %q, want npmPrefix bin %q (over PATH %q)", got, want, pathBin)
+	}
+}

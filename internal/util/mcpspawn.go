@@ -29,23 +29,24 @@ var pkgForBin = map[string]string{
 // whichNpmGlobal finds bin on PATH, else in the npm global bin dir (custom prefix not on PATH).
 // It never edits PATH: the spawn uses the absolute path, and PATH changes would skew later lookups.
 func whichNpmGlobal(bin string) string {
-	if p := Which(bin); p != "" {
-		return p
-	}
-	prefix := npmPrefix()
-	if prefix == "" {
-		return ""
-	}
 	names := []string{bin}
 	if IsWin {
 		names = []string{bin + ".exe", bin + ".cmd", bin + ".bat", bin}
 	}
-	dir := npmGlobalBinDir(prefix, IsWin)
-	for _, n := range names {
-		p := filepath.Join(dir, n)
-		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-			return p
+	for _, prefix := range []string{npmPrefix(), userLocalNpmPrefix()} {
+		if prefix == "" {
+			continue
 		}
+		dir := npmGlobalBinDir(prefix, IsWin)
+		for _, n := range names {
+			p := filepath.Join(dir, n)
+			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+				return p
+			}
+		}
+	}
+	if p := Which(bin); p != "" {
+		return p
 	}
 	return ""
 }

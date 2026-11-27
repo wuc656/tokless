@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/HoangP8/tokless/internal/agents"
+	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/tools"
 	"github.com/HoangP8/tokless/internal/util"
 )
@@ -182,4 +183,34 @@ func TestResyncInstructionWiringUpgradesFromV1_0_42(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCodegraphSpawnStaleDetectsOldPath(t *testing.T) {
+	agents.Register()
+	tools.Register()
+	t.Setenv("TOKLESS_TEST", "1")
+	home := withSelHome(t)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+	seedAgentInstalled(t, "antigravity")
+
+	agyCfg := agents.AntigravityMcpConfigPath()
+	staleCmd := "/stale/codegraph"
+	if util.IsWin {
+		staleCmd = `C:\\stale\\codegraph.cmd`
+	}
+	write(t, agyCfg, `{"mcpServers":{"codegraph":{"command":"`+staleCmd+`","args":["serve","--mcp"]}}}`)
+
+	if !tools.CodegraphSpawnStale() {
+		t.Fatal("CodegraphSpawnStale() = false, want true for stale command")
+	}
+
+	cg := core.GetTool("codegraph")
+	if errs := resyncWiringOpts([]*core.ToolManifest{cg}, core.RunOpts{}); len(errs) > 0 {
+		t.Fatalf("resyncWiringOpts failed: %v", errs)
+	}
+	if tools.CodegraphSpawnStale() {
+		raw, _ := util.ReadFileSafe(agyCfg)
+		t.Fatalf("CodegraphSpawnStale() still true after resync:\n%s", raw)
+	}
 }

@@ -78,6 +78,7 @@ func RunUpdate(opts InitOptions) int {
 
 	var changed []string
 	ctxWiringStale := false // host id / permissions: rewrite config only, no reinstall
+	cgWiringStale := false  // codegraph spawn path drift: rewrite MCP config only, no reinstall
 	util.TreeTop("Versions")
 	for _, t := range scope {
 		if t.InstructionOnly {
@@ -101,6 +102,9 @@ func RunUpdate(opts InitOptions) int {
 
 		// OpenCode pins a plugin: compare the pin, not the CLI.
 		pinStale, hideStale, migrateStale, pluginOnly := false, false, false, false
+		if t.ID == "codegraph" {
+			cgWiringStale = toolsPkg.CodegraphSpawnStale()
+		}
 		if t.ID == "context-mode" {
 			pluginOnly = !toolsPkg.CtxNeedsGlobalCLI()
 			ctxWiringStale = toolsPkg.CtxToolPermsStale() || toolsPkg.CtxSpawnStale()
@@ -169,6 +173,13 @@ func RunUpdate(opts InitOptions) int {
 	if ctxWiringStale {
 		if ctx := core.GetTool("context-mode"); ctx != nil {
 			for id, e := range resyncWiringOpts([]*core.ToolManifest{ctx}, core.RunOpts{}) {
+				util.L.Debug(id + " wiring refresh failed: " + firstLine(e.Error()))
+			}
+		}
+	}
+	if cgWiringStale {
+		if cg := core.GetTool("codegraph"); cg != nil {
+			for id, e := range resyncWiringOpts([]*core.ToolManifest{cg}, core.RunOpts{}) {
 				util.L.Debug(id + " wiring refresh failed: " + firstLine(e.Error()))
 			}
 		}

@@ -297,8 +297,36 @@ func codegraphBinCandidates() []string {
 	}
 }
 
-// ResolveCodegraphBin finds codegraph, surviving PATH drift.
+// ResolveCodegraphBin finds codegraph, prioritizing npm global installs so MCP
+// wiring matches version checks, before falling back to PATH and user bins.
 func ResolveCodegraphBin() string {
+	for _, prefix := range []string{npmPrefix(), userLocalNpmPrefix()} {
+		if prefix == "" {
+			continue
+		}
+		dir := npmGlobalBinDir(prefix, IsWin)
+		p := filepath.Join(dir, "codegraph")
+		if IsWin {
+			p += ".cmd"
+		}
+		if Exists(p) && CodegraphBinaryHealthy(p) {
+			PrependProcessPath(dir)
+			return p
+		}
+	}
+	// Fall back to nvm/node bin dir (npm global install lands there)
+	nodePath := ResolveNodeBinary()
+	if nodePath != "" {
+		dir := filepath.Dir(nodePath)
+		p := filepath.Join(dir, "codegraph")
+		if IsWin {
+			p += ".cmd"
+		}
+		if Exists(p) && CodegraphBinaryHealthy(p) {
+			PrependProcessPath(dir)
+			return p
+		}
+	}
 	if p := Which("codegraph"); p != "" {
 		if CodegraphBinaryHealthy(p) {
 			return p
@@ -317,34 +345,37 @@ func ResolveCodegraphBin() string {
 			return p
 		}
 	}
-	// Fall back to nvm node bin dir (npm global install lands there)
-	nodePath := ResolveNodeBinary()
-	if nodePath != "" {
-		dir := filepath.Dir(nodePath)
-		p := filepath.Join(dir, "codegraph")
-		if IsWin {
-			p += ".cmd"
-		}
-		if Exists(p) && CodegraphBinaryHealthy(p) {
-			PrependProcessPath(dir)
-			return p
-		}
-	}
-	for _, prefix := range []string{npmPrefix(), userLocalNpmPrefix()} {
-		if prefix == "" {
-			continue
-		}
-		dir := npmGlobalBinDir(prefix, IsWin)
-		p := filepath.Join(dir, "codegraph")
-		if IsWin {
-			p += ".cmd"
-		}
-		if Exists(p) && CodegraphBinaryHealthy(p) {
-			PrependProcessPath(dir)
-			return p
-		}
-	}
 	return ""
+}
+
+// CodegraphPathConflict returns (shadowedPath, activePath) when a different
+// codegraph executable appears earlier on PATH than ResolveCodegraphBin().
+func CodegraphPathConflict() (shadowedPath, activePath string) {
+	onPath := Which("codegraph")
+	active := ResolveCodegraphBin()
+	if onPath == "" || active == "" {
+		return "", ""
+	}
+	if sameExecutablePath(onPath, active) {
+		return "", ""
+	}
+	return onPath, active
+}
+
+func sameExecutablePath(a, b string) bool {
+	norm := func(p string) string {
+		if real, err := filepath.EvalSymlinks(p); err == nil {
+			p = real
+		} else if abs, err := filepath.Abs(p); err == nil {
+			p = abs
+		}
+		return filepath.Clean(p)
+	}
+	na, nb := norm(a), norm(b)
+	if IsWin {
+		return strings.EqualFold(na, nb)
+	}
+	return na == nb
 }
 
 // ResolveBunBinary finds bun, surviving PATH drift.

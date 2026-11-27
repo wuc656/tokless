@@ -61,6 +61,14 @@ func TestPickMcpSpawnWindowsCmdShim(t *testing.T) {
 
 	IsWin = true
 
+	SetHomeOverride(t.TempDir())
+	defer SetHomeOverride("")
+	t.Setenv("npm_config_prefix", "")
+	t.Setenv("NPM_CONFIG_PREFIX", "")
+	origPrefix := npmPrefix
+	npmPrefix = func() string { return "" }
+	defer func() { npmPrefix = origPrefix }()
+
 	t.Setenv("PATHEXT", ".EXE;.CMD")
 
 	// 1. file is context-mode.cmd → must be wrapped in `cmd /c`.
@@ -98,9 +106,6 @@ func TestPickMcpSpawnWindowsCmdShim(t *testing.T) {
 	}
 
 	// 3. binary absent → npx fallback, npx itself is a .cmd shim → wrapped.
-	origPrefix := npmPrefix
-	npmPrefix = func() string { return "" }
-	defer func() { npmPrefix = origPrefix }()
 	npxDir := t.TempDir()
 	os.WriteFile(filepath.Join(npxDir, "npx.cmd"), []byte("dummy"), 0755)
 	os.WriteFile(filepath.Join(npxDir, "npx.CMD"), []byte("dummy"), 0755)

@@ -50,6 +50,11 @@ func RunInfo() int {
 		toolsWg.Add(1)
 		go func() {
 			defer toolsWg.Done()
+			if tool.ID == "rtk" {
+				p, v := util.ResolveRtkBinAndVersion()
+				toolRows[i] = infoToolRow{version: v, path: p}
+				return
+			}
 			v := util.InstalledVersionFor(tool.ID)
 			var p string
 			if v != nil {

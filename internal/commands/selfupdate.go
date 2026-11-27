@@ -159,10 +159,6 @@ func selfUpdateExec(latest string) (bool, bool) {
 
 // selfUpdateDirect downloads, verifies, and swaps the release in place.
 func selfUpdateDirect(ctx context.Context, latest string) error {
-	asset, ok := toklessReleaseAsset()
-	if !ok {
-		return fmt.Errorf("unsupported platform")
-	}
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -170,36 +166,62 @@ func selfUpdateDirect(ctx context.Context, latest string) error {
 	if real, err := filepath.EvalSymlinks(exe); err == nil && real != "" {
 		exe = real
 	}
+	asset, ok := toklessReleaseAssetForExe(exe)
+	if !ok {
+		return fmt.Errorf("unsupported platform")
+	}
+	unlock, err := acquireSelfUpdateLock(filepath.Dir(exe))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	base := fmt.Sprintf("https://github.com/%s/%s/releases/download/v%s", owner, repo, latest)
-	download := exe + ".download"
-	_ = os.Remove(download)
+	download, err := tempDownloadPath(exe)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(download)
 	if err := downloadFile(ctx, base+"/"+asset, download); err != nil {
-		_ = os.Remove(download)
 		return err
 	}
 	want, err := releaseChecksum(ctx, base+"/SHA256SUMS", asset)
 	if err != nil {
-		_ = os.Remove(download)
 		return err
 	}
 	if err := verifySHA256(download, want); err != nil {
-		_ = os.Remove(download)
 		return err
 	}
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(download, 0o755); err != nil {
-			_ = os.Remove(download)
 			return err
 		}
 	}
 	if err := swapBinary(exe, download); err != nil {
-		_ = os.Remove(download)
 		return err
 	}
 	if runtime.GOOS == "windows" {
 		updateCompanionBinaryOnWindows(ctx, base, exe)
 	}
 	return nil
+}
+
+func tempDownloadPath(target string) (string, error) {
+	f, err := os.CreateTemp(filepath.Dir(target), filepath.Base(target)+".download-*")
+	if err != nil {
+		return "", err
+	}
+	p := f.Name()
+	_ = f.Close()
+	return p, nil
+}
+
+func acquireSelfUpdateLock(dir string) (func(), error) {
+	lockPath := filepath.Join(dir, ".tokless-selfupdate.lock")
+	unlock, err := util.AcquireFileLock(lockPath)
+	if err != nil {
+		return nil, fmt.Errorf("another self-update is already in progress (%s): %w", lockPath, err)
+	}
+	return unlock, nil
 }
 
 // updateCompanionBinaryOnWindows updates toklessw.exe alongside tokless.exe
@@ -226,26 +248,26 @@ func updateCompanionBinaryOnWindows(ctx context.Context, base, exe string) {
 	if _, err := os.Stat(companionPath); err != nil {
 		return
 	}
-	download := companionPath + ".download"
-	_ = os.Remove(download)
+	download, err := tempDownloadPath(companionPath)
+	if err != nil {
+		util.L.Warn("failed to stage " + companionName + ": " + err.Error())
+		return
+	}
+	defer os.Remove(download)
 	if err := downloadFile(ctx, base+"/"+companionAsset, download); err != nil {
-		_ = os.Remove(download)
 		util.L.Warn("failed to download " + companionName + ": " + err.Error())
 		return
 	}
 	want, err := releaseChecksum(ctx, base+"/SHA256SUMS", companionAsset)
 	if err != nil {
-		_ = os.Remove(download)
 		util.L.Warn("failed to fetch checksum for " + companionName + ": " + err.Error())
 		return
 	}
 	if err := verifySHA256(download, want); err != nil {
-		_ = os.Remove(download)
 		util.L.Warn("checksum mismatch for " + companionName + ": " + err.Error())
 		return
 	}
 	if err := swapBinary(companionPath, download); err != nil {
-		_ = os.Remove(download)
 		util.L.Warn("failed to swap " + companionName + ": " + err.Error())
 		return
 	}
@@ -386,15 +408,31 @@ func restorePrevious(exe string) error {
 	return last
 }
 
-// hasOldPrefix matches update backups; Windows paths are case-insensitive.
+// hasOldPrefix matches update backups (.old or .old.<pid>); Windows paths are case-insensitive.
 func hasOldPrefix(name, prefix string) bool {
 	if len(name) < len(prefix) {
 		return false
 	}
 	if runtime.GOOS == "windows" {
-		return strings.EqualFold(name[:len(prefix)], prefix)
+		if !strings.EqualFold(name[:len(prefix)], prefix) {
+			return false
+		}
+	} else if name[:len(prefix)] != prefix {
+		return false
 	}
-	return name[:len(prefix)] == prefix
+	rest := name[len(prefix):]
+	if rest == "" {
+		return true
+	}
+	if len(rest) < 2 || rest[0] != '.' {
+		return false
+	}
+	for i := 1; i < len(rest); i++ {
+		if rest[i] < '0' || rest[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // removeOldBinaries clears leftovers from earlier updates.
@@ -428,6 +466,10 @@ func renameRetry(from, to string) error {
 }
 
 func toklessReleaseAsset() (string, bool) {
+	return toklessReleaseAssetForExe("")
+}
+
+func toklessReleaseAssetForExe(exe string) (string, bool) {
 	var osPart string
 	switch runtime.GOOS {
 	case "linux":
@@ -437,6 +479,9 @@ func toklessReleaseAsset() (string, bool) {
 	case "windows":
 		if runtime.GOARCH != "amd64" {
 			return "", false
+		}
+		if strings.EqualFold(filepath.Base(exe), "toklessw.exe") {
+			return "toklessw-windows-x64.exe", true
 		}
 		return "tokless-windows-x64.exe", true
 	default:

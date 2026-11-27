@@ -116,7 +116,7 @@ func runPurgeWith(ops purgeOps) int {
 		return 1
 	}
 	failed := false
-	if p := util.ResolveRtkBin(); p != "" && util.Exists(p) {
+	if p := util.ResolveExistingRtkBin(); p != "" && util.Exists(p) {
 		if r := util.Run(p, []string{"init", "--uninstall"}, util.RunOptions{Capture: true}); r.Code == 0 {
 			if err := ops.removeFile(p); err != nil {
 				util.L.Sub("rtk binary: " + err.Error())

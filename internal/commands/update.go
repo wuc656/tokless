@@ -170,16 +170,26 @@ func RunUpdate(opts InitOptions) int {
 		return 0
 	}
 
+	var staleAgents []*core.AgentManifest
+	var staleInstalled map[string]bool
+	ensureStaleAgents := func() {
+		if staleAgents == nil {
+			staleAgents = core.ListAgents()
+			staleInstalled, _ = detectAgents(staleAgents)
+		}
+	}
 	if ctxWiringStale {
 		if ctx := core.GetTool("context-mode"); ctx != nil {
-			for id, e := range resyncWiringOpts([]*core.ToolManifest{ctx}, core.RunOpts{}) {
+			ensureStaleAgents()
+			for id, e := range resyncWiringOptsWithAgents([]*core.ToolManifest{ctx}, core.RunOpts{}, staleAgents, staleInstalled) {
 				util.L.Debug(id + " wiring refresh failed: " + firstLine(e.Error()))
 			}
 		}
 	}
 	if cgWiringStale {
 		if cg := core.GetTool("codegraph"); cg != nil {
-			for id, e := range resyncWiringOpts([]*core.ToolManifest{cg}, core.RunOpts{}) {
+			ensureStaleAgents()
+			for id, e := range resyncWiringOptsWithAgents([]*core.ToolManifest{cg}, core.RunOpts{}, staleAgents, staleInstalled) {
 				util.L.Debug(id + " wiring refresh failed: " + firstLine(e.Error()))
 			}
 		}
@@ -189,8 +199,9 @@ func RunUpdate(opts InitOptions) int {
 	}
 
 	if len(changed) == 0 {
+		ensureStaleAgents()
 		toolsPkg.ConfigureInstructionConflicts(true)
-		resyncInstructionWiring(opts.Tools...)
+		resyncInstructionWiringWithAgents(staleAgents, staleInstalled, opts.Tools...)
 		toolsPkg.ConfigureInstructionConflicts(false)
 		if !scoped {
 			agents.PiUpdatePackages()
@@ -319,15 +330,17 @@ func RunUpdate(opts InitOptions) int {
 
 	// Re-pin upgraded tools' per-agent config to the freshly installed version.
 	if !opts.DryRun {
+		allAgents := core.ListAgents()
+		installedIDs, _ := detectAgents(allAgents)
 		toolsPkg.ConfigureInstructionConflicts(true)
-		for id, e := range resyncWiringOpts(tools, core.RunOpts{Upgrade: true}) {
+		for id, e := range resyncWiringOptsWithAgents(tools, core.RunOpts{Upgrade: true}, allAgents, installedIDs) {
 			treeStatus(statusWarn(id + " re-pin failed: " + firstLine(e.Error())))
 			updated = removeString(updated, id)
 			if !contains(failed, id) {
 				failed = append(failed, id)
 			}
 		}
-		resyncInstructionWiring(opts.Tools...)
+		resyncInstructionWiringWithAgents(allAgents, installedIDs, opts.Tools...)
 		toolsPkg.ConfigureInstructionConflicts(false)
 		if !scoped {
 			agents.PiUpdatePackages()
@@ -361,9 +374,13 @@ func resyncWiring(tools []*core.ToolManifest) {
 }
 
 func resyncWiringOpts(tools []*core.ToolManifest, ro core.RunOpts) map[string]error {
-	errs := map[string]error{}
 	agents := core.ListAgents()
 	installedIDs, _ := detectAgents(agents)
+	return resyncWiringOptsWithAgents(tools, ro, agents, installedIDs)
+}
+
+func resyncWiringOptsWithAgents(tools []*core.ToolManifest, ro core.RunOpts, agents []*core.AgentManifest, installedIDs map[string]bool) map[string]error {
+	errs := map[string]error{}
 	for _, tool := range tools {
 		for _, agent := range agents {
 			wire, ok := tool.WireFor[agent.ID]
@@ -404,14 +421,18 @@ func removeString(ss []string, s string) []string {
 // resyncInstructionWiring refreshes already-wired instructions and wires newly
 // added selected instruction tools onto agents already managed by Tokless.
 func resyncInstructionWiring(ids ...string) {
+	allAgents := core.ListAgents()
+	installedIDs, _ := detectAgents(allAgents)
+	resyncInstructionWiringWithAgents(allAgents, installedIDs, ids...)
+}
+
+func resyncInstructionWiringWithAgents(allAgents []*core.AgentManifest, installedIDs map[string]bool, ids ...string) {
 	var instrTools []*core.ToolManifest
 	for _, tool := range core.ListTools() {
 		if tool.InstructionOnly && (len(ids) == 0 || contains(ids, tool.ID)) {
 			instrTools = append(instrTools, tool)
 		}
 	}
-	allAgents := core.ListAgents()
-	installedIDs, _ := detectAgents(allAgents)
 	for _, agent := range allAgents {
 		if !installedIDs[agent.ID] {
 			continue

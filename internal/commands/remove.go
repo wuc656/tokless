@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/HoangP8/tokless/internal/agents"
@@ -15,17 +16,18 @@ import (
 )
 
 type removeOps struct {
-	stopProxy        func() error
-	stopBYOK         func() error
-	stopCopilotProxy func() error
-	stopGrokProxy    func() error
-	disableAutostart func() error
-	removeAll        func(string) error
-	removeFile       func(string) error
-	cleanUserPath    func(string) error
-	uninstallNpm     func(pkgs ...string) error
-	uninstallRtk     func(string) error
-	selfDelete       func(string) error
+	stopProxy         func() error
+	stopBYOK          func() error
+	stopCopilotProxy  func() error
+	stopGrokProxy     func() error
+	disableAutostart  func() error
+	removeAll         func(string) error
+	removeFile        func(string) error
+	resolveInstallDir func() string
+	cleanUserPath     func(string) error
+	uninstallNpm      func(pkgs ...string) error
+	uninstallRtk      func(string) error
+	selfDelete        func(string) error
 }
 
 func defaultRemoveOps() removeOps {
@@ -73,6 +75,7 @@ func defaultRemoveOps() removeOps {
 			}
 			return os.Remove(p)
 		},
+		resolveInstallDir: resolveToklessInstallDir,
 		cleanUserPath: func(dir string) error {
 			if isTest || !util.IsWin {
 				return nil
@@ -164,7 +167,9 @@ func cleanResetPurgeWith(ops removeOps, opts InitOptions) []string {
 	for _, agent := range core.ListAgents() {
 		for _, tool := range allTools {
 			if unwire, ok := tool.UnwireFor[agent.ID]; ok {
-				_, _ = unwire(core.RunOpts{Agent: agent.ID})
+				if _, err := unwire(core.RunOpts{Agent: agent.ID}); err != nil && !os.IsNotExist(err) {
+					failures = append(failures, "unwire "+agent.ID+"/"+tool.ID+": "+err.Error())
+				}
 			}
 		}
 	}
@@ -201,7 +206,7 @@ func cleanResetPurgeWith(ops removeOps, opts InitOptions) []string {
 
 	// Phase 4: Purge tool binaries & npm packages
 	bar.Begin("Uninstalling tool binaries & packages")
-	if p := util.ResolveRtkBin(); p != "" && util.Exists(p) {
+	if p := util.ResolveExistingRtkBin(); p != "" && util.Exists(p) {
 		if err := ops.uninstallRtk(p); err != nil {
 			failures = append(failures, "rtk: "+err.Error())
 		}
@@ -302,7 +307,9 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 	for _, agent := range core.ListAgents() {
 		for _, tool := range allTools {
 			if unwire, ok := tool.UnwireFor[agent.ID]; ok {
-				_, _ = unwire(core.RunOpts{Agent: agent.ID})
+				if _, err := unwire(core.RunOpts{Agent: agent.ID}); err != nil && !os.IsNotExist(err) {
+					failures = append(failures, "unwire "+agent.ID+"/"+tool.ID+": "+err.Error())
+				}
 			}
 		}
 	}
@@ -339,7 +346,7 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 
 	// Phase 4: Purge tool binaries & npm packages
 	bar.Begin("Uninstalling tool binaries & packages")
-	if p := util.ResolveRtkBin(); p != "" && util.Exists(p) {
+	if p := util.ResolveExistingRtkBin(); p != "" && util.Exists(p) {
 		if err := ops.uninstallRtk(p); err != nil {
 			failures = append(failures, "rtk: "+err.Error())
 		}
@@ -349,20 +356,38 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 	}
 	bar.Complete("")
 
+	// Resolve installation dir before Phase 5 deletes InstallMarkerPath.
+	resolveInstallDir := ops.resolveInstallDir
+	if resolveInstallDir == nil {
+		resolveInstallDir = resolveToklessInstallDir
+	}
+	installDir := resolveInstallDir()
+
 	// Phase 5: Purge Tokless data, cache, and state
 	bar.Begin("Purging Tokless data & cache directories")
-	_ = ops.removeAll(util.HeadroomPathsResolved().Root)
-	_ = ops.removeAll(util.ToklessDataDir())
-	_ = ops.removeFile(util.InstallMarkerPath())
-	_ = ops.removeFile(util.SelectionPath())
+	for _, path := range []string{util.HeadroomPathsResolved().Root, util.ToklessDataDir()} {
+		if path != "" && util.Exists(path) {
+			if err := ops.removeAll(path); err != nil && !os.IsNotExist(err) {
+				failures = append(failures, "remove "+filepath.Base(path)+": "+err.Error())
+			}
+		}
+	}
+	for _, path := range []string{util.InstallMarkerPath(), util.SelectionPath()} {
+		if path != "" && util.Exists(path) {
+			if err := ops.removeFile(path); err != nil && !os.IsNotExist(err) {
+				failures = append(failures, "remove "+filepath.Base(path)+": "+err.Error())
+			}
+		}
+	}
 	bar.Complete("")
 
 	// Phase 6: Clean Windows User PATH & remove binary installation directory
 	bar.Begin("Removing binaries & installation directory")
-	installDir := resolveToklessInstallDir()
 	if installDir != "" {
-		if util.IsWin {
-			_ = ops.cleanUserPath(installDir)
+		if util.IsWin && isToklessInstallationDir(installDir) {
+			if err := ops.cleanUserPath(installDir); err != nil {
+				failures = append(failures, "clean-path: "+err.Error())
+			}
 		}
 		if err := ops.selfDelete(installDir); err != nil {
 			failures = append(failures, "self-delete: "+err.Error())
@@ -373,14 +398,12 @@ func runRemoveWith(ops removeOps, opts InitOptions) int {
 
 	util.L.Raw("")
 	if len(failures) > 0 && !opts.Force {
-		util.L.Raw("  " + util.C.Yellow(util.Sym.Warn) + " " + util.C.Bold("Removal completed with notices:"))
+		util.L.Err("Removal completed with failures:")
 		for _, f := range failures {
 			util.L.Raw("    " + util.C.Gray("• ") + f)
 		}
 		util.L.Raw("")
-		util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Bold("Tokless wiring, daemons, and data have been removed."))
-		util.L.Raw("")
-		return 0
+		return 1
 	}
 
 	util.L.Raw("  " + util.C.Green(util.Sym.Check) + " " + util.C.Bold("Tokless has been completely removed."))
@@ -424,39 +447,80 @@ func resolveToklessInstallDir() string {
 	return ""
 }
 
-// isToklessInstallationDir checks whether dir safely qualifies as a tokless installation directory.
+var toklessArtifactRe = regexp.MustCompile(`^(?:toklessw?(?:\.exe)?)\.(?:old(?:\.\d+)?|\d+\.bak|download(?:-\d+)?)$`)
+
+func isKnownToklessInstallArtifact(name string, isDir bool) bool {
+	if isDir {
+		return false
+	}
+	lower := strings.ToLower(name)
+	switch lower {
+	case "tokless", "tokless.exe", "toklessw", "toklessw.exe", "install.json", "versions.json", ".tokless-selfupdate.lock":
+		return true
+	}
+	return toklessArtifactRe.MatchString(lower)
+}
+
+// isToklessInstallationDir checks whether dir contains only known tokless artifacts
+// and has a "tokless" directory name so recursive removal never touches user dirs.
 func isToklessInstallationDir(dir string) bool {
 	if dir == "" {
 		return false
 	}
-	base := strings.ToLower(filepath.Base(dir))
-	if base != "tokless" {
+	if strings.ToLower(filepath.Base(dir)) != "tokless" {
 		return false
 	}
-	// Verify directory exists and doesn't contain unrelated critical files
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return false
 	}
 	for _, e := range entries {
-		name := strings.ToLower(e.Name())
-		// Expected tokless files: tokless, tokless.exe, toklessw, toklessw.exe, install.json, versions.json, update logs/temps
-		if strings.HasPrefix(name, "tokless") || name == "install.json" || name == "versions.json" {
-			continue
+		if !isKnownToklessInstallArtifact(e.Name(), e.IsDir()) {
+			return false
 		}
-		// If unknown directory or foreign file found, reject directory deletion as safety measure
-		return false
 	}
 	return true
 }
 
-// selfDeleteDir removes the installation directory or schedules self-deletion on Windows.
+// removeToklessBinariesInDir deletes only verified Tokless executables inside a
+// shared bin directory or an install directory that also holds user subdirectories/files.
+func removeToklessBinariesInDir(installDir string) error {
+	exe, _ := os.Executable()
+	if exe != "" {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil && resolved != "" {
+			exe = resolved
+		}
+		exe = filepath.Clean(exe)
+	}
+	for _, name := range []string{"tokless", "toklessw", "tokless.exe", "toklessw.exe"} {
+		p := filepath.Join(installDir, name)
+		fi, err := os.Stat(p)
+		if err != nil || fi.IsDir() {
+			continue
+		}
+		if util.IsWin && exe != "" && strings.EqualFold(filepath.Clean(p), exe) {
+			cmdStr := fmt.Sprintf(`ping 127.0.0.1 -n 3 >nul & del /f /q "%s"`, p)
+			bgCmd := exec.Command("cmd.exe", "/C", cmdStr)
+			util.PrepareSysProcAttr(bgCmd, true)
+			if err := bgCmd.Start(); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// selfDeleteDir removes a dedicated installation directory or only the Tokless binaries in a shared directory.
 func selfDeleteDir(installDir string) error {
 	if util.IsRunningInTest() || installDir == "" || !util.Exists(installDir) {
 		return nil
 	}
 	if !isToklessInstallationDir(installDir) {
-		return fmt.Errorf("refusing to self-delete unverified directory: %s", installDir)
+		return removeToklessBinariesInDir(installDir)
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -526,50 +590,46 @@ if ($key) {
 // deepSweepAgentConfigs checks all agent configuration files and prunes any remaining
 // entries referencing "tokless" or "run-mcp" or Tokless-managed tools.
 func deepSweepAgentConfigs() {
-	cleanJsonMcp := func(filePath string, childKey string) {
-		if raw, ok := util.ReadFileSafe(filePath); ok {
-			if cfg := util.TryParseJsonc(raw); cfg != nil {
-				changed := false
-				targetMap := cfg
-				if childKey != "" {
-					if strings.Contains(childKey, ".") {
-						parts := strings.Split(childKey, ".")
-						curr := cfg
-						for _, p := range parts {
-							if next, ok := curr.Get(p); ok {
-								if om, ok := next.(*util.OrderedMap); ok && om != nil {
-									curr = om
-								} else {
-									return
-								}
-							} else {
-								return
-							}
-						}
-						targetMap = curr
-					} else {
-						if cm, ok := cfg.Get(childKey); ok {
-							if om, ok := cm.(*util.OrderedMap); ok && om != nil {
-								targetMap = om
-							} else {
-								return
-							}
-						} else {
-							return
-						}
-					}
-				}
-				for _, k := range targetMap.Keys() {
-					v, _ := targetMap.Get(k)
-					if k == "codegraph" || k == "context-mode" || k == "context_mode" || k == "projectmem" || k == "caveman" || isToklessManagedEntry(v) {
-						targetMap.Delete(k)
-						changed = true
-					}
-				}
-				if changed {
-					_ = util.WriteFile(filePath, util.StringifyJSON(cfg))
-				}
+	cleanJsonMcp := func(filePath string, path ...string) {
+		raw, ok := util.ReadFileSafe(filePath)
+		if !ok {
+			return
+		}
+		cfg := util.TryParseJsonc(raw)
+		if cfg == nil {
+			return
+		}
+		targetMap := cfg
+		for _, p := range path {
+			nextVal, has := targetMap.Get(p)
+			if !has {
+				return
 			}
+			om, isMap := nextVal.(*util.OrderedMap)
+			if !isMap || om == nil {
+				return
+			}
+			targetMap = om
+		}
+		next := raw
+		changed := false
+		for _, k := range targetMap.Keys() {
+			v, _ := targetMap.Get(k)
+			if !util.IsToklessManagedMcpEntry(v) {
+				continue
+			}
+			keyPath := append(append([]string(nil), path...), k)
+			edited, deleted, err := util.DeleteJSONCNestedKey(next, keyPath)
+			if err != nil {
+				return
+			}
+			if deleted {
+				next = edited
+				changed = true
+			}
+		}
+		if changed && next != raw {
+			_ = util.WriteFile(filePath, next)
 		}
 	}
 
@@ -581,7 +641,10 @@ func deepSweepAgentConfigs() {
 	if raw, ok := util.ReadFileSafe(codexFile); ok {
 		next := raw
 		for _, tool := range []string{"codegraph", "context-mode", "context_mode", "projectmem", "headroom"} {
-			next = util.RemoveBlock(next, "mcp_servers."+tool)
+			header := "mcp_servers." + tool
+			if util.IsToklessManagedTomlMcpBlock(next, header, "") {
+				next = util.RemoveBlock(next, header)
+			}
 		}
 		if next != raw {
 			_ = util.WriteFile(codexFile, next)
@@ -590,6 +653,7 @@ func deepSweepAgentConfigs() {
 	codexHooks := agents.CodexRtkHooksFile()
 	if raw, ok := util.ReadFileSafe(codexHooks); ok {
 		if cfg := util.TryParseJsonc(raw); cfg != nil {
+			next := raw
 			changed := false
 			if hooks, ok := cfg.Get("hooks"); ok {
 				if hm, ok := hooks.(*util.OrderedMap); ok && hm != nil {
@@ -599,45 +663,66 @@ func deepSweepAgentConfigs() {
 						if !ok {
 							continue
 						}
-						var kept []any
-						for _, g := range arr {
-							if isToklessManagedEntry(g) {
-								changed = true
+						removeGroups := map[int]bool{}
+						for gi := len(arr) - 1; gi >= 0; gi-- {
+							g := arr[gi]
+							if isToklessManagedHookEntry(g) {
+								removeGroups[gi] = true
 								continue
 							}
-							if gm, ok := g.(*util.OrderedMap); ok && gm != nil {
-								if hooksVal, ok := gm.Get("hooks"); ok {
-									if hooksArr, ok := hooksVal.([]any); ok {
-										var keptSub []any
-										for _, sub := range hooksArr {
-											if isToklessManagedEntry(sub) {
-												changed = true
-												continue
-											}
-											keptSub = append(keptSub, sub)
-										}
-										if len(keptSub) != len(hooksArr) {
-											gm.Set("hooks", keptSub)
-											changed = true
-										}
-										if len(keptSub) == 0 {
-											changed = true
-											continue
-										}
-									}
+							gm, ok := g.(*util.OrderedMap)
+							if !ok || gm == nil {
+								continue
+							}
+							hooksVal, ok := gm.Get("hooks")
+							if !ok {
+								continue
+							}
+							hooksArr, ok := hooksVal.([]any)
+							if !ok || len(hooksArr) == 0 {
+								continue
+							}
+							subRemove := map[int]bool{}
+							for si, sub := range hooksArr {
+								if isToklessManagedHookEntry(sub) {
+									subRemove[si] = true
 								}
 							}
-							kept = append(kept, g)
+							if len(subRemove) == 0 {
+								continue
+							}
+							if len(subRemove) >= len(hooksArr) {
+								removeGroups[gi] = true
+								continue
+							}
+							edited, deleted, err := util.DeleteJSONCSubArrayIndices(next, []string{"hooks", event}, gi, "hooks", subRemove)
+							if err != nil {
+								next = raw
+								changed = false
+								break
+							}
+							if deleted {
+								next = edited
+								changed = true
+							}
 						}
-						if len(kept) != len(arr) {
-							hm.Set(event, kept)
-							changed = true
+						if len(removeGroups) > 0 {
+							edited, deleted, err := util.DeleteJSONCArrayIndices(next, []string{"hooks", event}, removeGroups)
+							if err != nil {
+								next = raw
+								changed = false
+								break
+							}
+							if deleted {
+								next = edited
+								changed = true
+							}
 						}
 					}
 				}
 			}
-			if changed {
-				_ = util.WriteFile(codexHooks, util.StringifyJSON(cfg))
+			if changed && next != raw {
+				_ = util.WriteFile(codexHooks, next)
 			}
 		}
 	}
@@ -652,7 +737,7 @@ func deepSweepAgentConfigs() {
 
 	// 5. OpenCode & OpenCode2
 	cleanJsonMcp(util.OpenCodePathsResolved().Config, "mcp")
-	cleanJsonMcp(util.OpenCodePathsV2().Config, "mcp.servers")
+	cleanJsonMcp(util.OpenCodePathsV2().Config, "mcp", "servers")
 
 	// 6. Droid, Pi, OMP, Cline, Kimi, Kilo, Amp, Zcode
 	cleanJsonMcp(filepath.Join(util.Home(), ".factory", "mcp.json"), "mcpServers")
@@ -662,7 +747,7 @@ func deepSweepAgentConfigs() {
 	cleanJsonMcp(util.KimiPathsResolved().McpConfig, "mcpServers")
 	cleanJsonMcp(util.KiloPathsResolved().Config, "mcp")
 	cleanJsonMcp(util.AmpPathsResolved().Config, "amp.mcpServers")
-	cleanJsonMcp(util.ZcodePathsResolved().McpConfig, "mcp.servers")
+	cleanJsonMcp(util.ZcodePathsResolved().McpConfig, "mcp", "servers")
 }
 
 func isOnlyToklessHeaderContent(s string) bool {
@@ -677,25 +762,37 @@ func isOnlyToklessHeaderContent(s string) bool {
 	return true
 }
 
-func isToklessManagedEntry(v any) bool {
-	if util.IsToklessOrToolMcpEntry("codegraph", v) || util.IsToklessOrToolMcpEntry("context-mode", v) || util.IsToklessOrToolMcpEntry("projectmem", v) || util.IsToklessOrToolMcpEntry("headroom", v) {
-		return true
+func isToklessManagedHookEntry(v any) bool {
+	m, ok := v.(*util.OrderedMap)
+	if !ok || m == nil {
+		return false
 	}
-	if m, ok := v.(*util.OrderedMap); ok && m != nil {
-		if cmd, ok := m.Get("command"); ok {
-			if s, ok := cmd.(string); ok && (strings.Contains(strings.ToLower(s), "tokless") || strings.Contains(strings.ToLower(s), "codegraph") || strings.Contains(strings.ToLower(s), "context-mode")) {
-				return true
-			}
+	if _, hasArgs := m.Get("args"); hasArgs {
+		return false
+	}
+	cmd, ok := m.Get("command")
+	if !ok {
+		return false
+	}
+	cmdStr, ok := cmd.(string)
+	if !ok {
+		return false
+	}
+	fields := util.SplitCommand(strings.TrimSpace(cmdStr))
+	if len(fields) < 2 {
+		return false
+	}
+	exe := strings.Trim(fields[0], `"'`)
+	base := strings.ToLower(filepath.Base(strings.ReplaceAll(exe, "\\", "/")))
+	if util.IsToklessCommand(exe) || strings.HasPrefix(base, "tokless-") {
+		switch fields[1] {
+		case "rtk-hook", "codex-perm", "run-mcp":
+			return true
 		}
-		if args, ok := m.Get("args"); ok {
-			if arr, ok := args.([]any); ok {
-				for _, a := range arr {
-					if s, ok := a.(string); ok && (s == "run-mcp" || strings.Contains(s, "tokless") || strings.Contains(s, "codegraph") || strings.Contains(s, "context-mode")) {
-						return true
-					}
-				}
-			}
-		}
+	}
+	baseNoExt := strings.TrimSuffix(strings.TrimSuffix(strings.TrimSuffix(base, ".exe"), ".cmd"), ".bat")
+	if baseNoExt == "context-mode" && fields[1] == "hook" {
+		return true
 	}
 	return false
 }

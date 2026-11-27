@@ -2,6 +2,7 @@ package util
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -296,6 +297,239 @@ func McpEntryMatchesTool(toolID, expectedCmd string, expectedArgs []string, actu
 					}
 				}
 			}
+		}
+	}
+	return false
+}
+
+// IsToklessManagedMcpEntry reports whether an MCP config entry was written by Tokless
+// (invoking tokless/toklessw with run-mcp or a bare tokless executable stub).
+func IsToklessManagedMcpEntry(v any) bool {
+	cmd, args, ok := ExtractMcpCommandAndArgs(v)
+	if !ok || !IsToklessCommand(cmd) {
+		return false
+	}
+	if len(args) == 0 {
+		return true
+	}
+	for _, a := range args {
+		if strings.EqualFold(a, "run-mcp") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseTomlStringArrayInBlock(blk, key string) ([]any, bool, bool) {
+	lines := strings.Split(blk, "\n")
+	startIdx := -1
+	var afterEq string
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, key) {
+			continue
+		}
+		if eq := strings.IndexByte(trimmed, '='); eq > 0 && strings.TrimSpace(trimmed[:eq]) == key {
+			startIdx = i
+			afterEq = strings.TrimSpace(stripTomlComment(trimmed[eq+1:]))
+			break
+		}
+	}
+	if startIdx < 0 {
+		return nil, false, true
+	}
+	if !strings.HasPrefix(afterEq, "[") {
+		return nil, true, false
+	}
+
+	var buf strings.Builder
+	depth := 0
+	inStr, inLit, esc := false, false, false
+	closed := false
+	for i := startIdx; i < len(lines) && !closed; i++ {
+		chunk := afterEq
+		if i > startIdx {
+			chunk = strings.TrimSpace(stripTomlComment(lines[i]))
+			if buf.Len() > 0 && chunk != "" {
+				buf.WriteByte('\n')
+			}
+		}
+		for j := 0; j < len(chunk); j++ {
+			c := chunk[j]
+			buf.WriteByte(c)
+			if inStr {
+				if esc {
+					esc = false
+				} else if c == '\\' {
+					esc = true
+				} else if c == '"' {
+					inStr = false
+				}
+				continue
+			}
+			if inLit {
+				if c == '\'' {
+					inLit = false
+				}
+				continue
+			}
+			switch c {
+			case '"':
+				inStr = true
+			case '\'':
+				inLit = true
+			case '[':
+				depth++
+			case ']':
+				depth--
+				if depth == 0 {
+					if strings.TrimSpace(chunk[j+1:]) != "" {
+						return nil, true, false
+					}
+					closed = true
+				}
+			}
+			if closed {
+				break
+			}
+		}
+	}
+	if !closed || inStr || inLit {
+		return nil, true, false
+	}
+	arr, ok := parseTomlStringArray(buf.String())
+	return arr, true, ok
+}
+
+func parseTomlStringArray(raw string) ([]any, bool) {
+	s := strings.TrimSpace(raw)
+	if len(s) < 2 || s[0] != '[' || s[len(s)-1] != ']' {
+		return nil, false
+	}
+	i := 1
+	end := len(s) - 1
+	skipWS := func() {
+		for i < end && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
+			i++
+		}
+	}
+	var out []any
+	for {
+		skipWS()
+		if i >= end {
+			return out, true
+		}
+		var val string
+		switch s[i] {
+		case '"':
+			j := i + 1
+			esc := false
+			for j < end {
+				c := s[j]
+				if esc {
+					esc = false
+					j++
+					continue
+				}
+				if c == '\\' {
+					esc = true
+					j++
+					continue
+				}
+				if c == '"' {
+					break
+				}
+				j++
+			}
+			if j >= end || s[j] != '"' {
+				return nil, false
+			}
+			u, err := strconv.Unquote(s[i : j+1])
+			if err != nil {
+				return nil, false
+			}
+			val = u
+			i = j + 1
+		case '\'':
+			j := i + 1
+			for j < end && s[j] != '\'' {
+				j++
+			}
+			if j >= end || s[j] != '\'' {
+				return nil, false
+			}
+			val = s[i+1 : j]
+			i = j + 1
+		default:
+			return nil, false
+		}
+		out = append(out, val)
+		skipWS()
+		if i >= end {
+			return out, true
+		}
+		if s[i] != ',' {
+			return nil, false
+		}
+		i++
+	}
+}
+
+func tomlBlockHasOnlyKeys(blk string, allowed map[string]bool) bool {
+	lines := strings.Split(blk, "\n")
+	if len(lines) == 0 {
+		return false
+	}
+	for i := 1; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			return false
+		}
+		eq := strings.IndexByte(trimmed, '=')
+		if eq <= 0 {
+			return false
+		}
+		key := strings.Trim(strings.TrimSpace(trimmed[:eq]), `"'`)
+		if !allowed[key] {
+			return false
+		}
+	}
+	return true
+}
+
+// IsToklessManagedTomlMcpBlock reports whether the TOML [header] table represents
+// a Tokless-managed MCP entry (or, when allowDirectTool != "", a bare legacy direct tool with no custom fields).
+func IsToklessManagedTomlMcpBlock(src, header, allowDirectTool string) bool {
+	blk, ok := BlockText(src, header)
+	if !ok {
+		return false
+	}
+	cmd := TomlBlockField(src, header, "command")
+	if cmd == "" {
+		return false
+	}
+	entry := NewOrderedMap()
+	entry.Set("command", cmd)
+	if args, found, valid := parseTomlStringArrayInBlock(blk, "args"); found {
+		if !valid {
+			return false
+		}
+		entry.Set("args", args)
+	}
+	if IsToklessManagedMcpEntry(entry) {
+		return true
+	}
+	if allowDirectTool != "" && strings.EqualFold(cmd, allowDirectTool) && !strings.ContainsAny(cmd, `/\`) {
+		if v, hasArgs := entry.Get("args"); !hasArgs || len(v.([]any)) == 0 {
+			return tomlBlockHasOnlyKeys(blk, map[string]bool{
+				"command":                     true,
+				"enabled":                     true,
+				"args":                        true,
+				"default_tools_approval_mode": true,
+			})
 		}
 	}
 	return false

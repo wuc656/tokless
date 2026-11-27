@@ -416,3 +416,50 @@ func TestOpenCodeInstalledMajorNone(t *testing.T) {
 		t.Fatalf("OpenCodeInstalledMajor() = %d, want 0 when no binary", got)
 	}
 }
+
+func TestOpenCodeDetectRoundSharesAndResets(t *testing.T) {
+	home := t.TempDir()
+	util.SetHomeOverride(home)
+	t.Setenv("HOME", home)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+
+	binDir := filepath.Join(home, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
+	verFile := filepath.Join(home, "ver.txt")
+	if err := os.WriteFile(verFile, []byte("1.2.3\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var binPath, script string
+	if os.PathSeparator == '\\' {
+		binPath = filepath.Join(binDir, "opencode.cmd")
+		script = "@echo off\r\ntype \"" + verFile + "\"\r\n"
+	} else {
+		binPath = filepath.Join(binDir, "opencode")
+		script = "#!/bin/sh\ncat \"" + verFile + "\"\n"
+	}
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	end := BeginOpenCodeDetectRound()
+	if got := OpenCodeInstalledMajor(); got != 1 {
+		end()
+		t.Fatalf("first round probe = %d, want 1", got)
+	}
+	if err := os.WriteFile(verFile, []byte("2.0.1\n"), 0o644); err != nil {
+		end()
+		t.Fatal(err)
+	}
+	if got := OpenCodeInstalledMajor(); got != 1 {
+		end()
+		t.Fatalf("within same round probe = %d, want cached 1", got)
+	}
+	end()
+
+	if got := OpenCodeInstalledMajor(); got != 2 {
+		t.Fatalf("after round end probe = %d, want fresh 2", got)
+	}
+}

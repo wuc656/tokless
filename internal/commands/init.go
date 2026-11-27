@@ -181,6 +181,7 @@ func saveSelectionIfNeeded(mode string, tools []*core.ToolManifest, dryRun bool)
 
 // detectAgents probes all agents concurrently.
 func detectAgents(allAgents []*core.AgentManifest) (map[string]bool, map[string]string) {
+	defer agents.BeginOpenCodeDetectRound()()
 	results := make([]core.Detection, len(allAgents))
 	var wg sync.WaitGroup
 	for i, a := range allAgents {

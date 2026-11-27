@@ -849,7 +849,10 @@ func TestCursorMcpRefusesMalformedManagedShapeWithoutChangingConfig(t *testing.T
 
 func TestCursorMcpMigratesLegacyCodegraphEntry(t *testing.T) {
 	withoutWSL(t)
-	util.SetHomeOverride(t.TempDir())
+	home := t.TempDir()
+	t.Setenv("PATH", "")
+	t.Setenv("npm_config_prefix", home)
+	util.SetHomeOverride(home)
 	t.Cleanup(func() { util.SetHomeOverride("") })
 	for _, tc := range []struct {
 		command string

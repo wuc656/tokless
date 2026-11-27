@@ -243,3 +243,54 @@ func TestCodegraphPathConflictIgnoresSameDirAndNvmShim(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveRtkBinDoesNotMutatePathOrReturnBrokenBinary(t *testing.T) {
+	home := t.TempDir()
+	SetHomeOverride(home)
+	defer SetHomeOverride("")
+	t.Setenv("LOCALAPPDATA", home)
+
+	pathDir := t.TempDir()
+	if IsWin {
+		if err := os.WriteFile(filepath.Join(pathDir, "rtk.exe"), nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := os.WriteFile(filepath.Join(pathDir, "rtk"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", pathDir)
+	beforePath := os.Getenv("PATH")
+
+	if got := ResolveRtkBin(); got != "" {
+		t.Fatalf("ResolveRtkBin() = %q, want empty when all candidates fail", got)
+	}
+	if afterPath := os.Getenv("PATH"); afterPath != beforePath {
+		t.Fatalf("PATH mutated on failed ResolveRtkBin: got %q, want %q", afterPath, beforePath)
+	}
+}
+
+func TestWhichSkipsNonExecutableOnUnix(t *testing.T) {
+	if IsWin {
+		t.Skip("unix permission bits")
+	}
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	nonExec := filepath.Join(dir1, "demo")
+	execBin := filepath.Join(dir2, "demo")
+	if err := os.WriteFile(nonExec, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(execBin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir1+":"+dir2)
+	if got := Which("demo"); got != execBin {
+		t.Fatalf("Which() = %q, want executable %q", got, execBin)
+	}
+	t.Setenv("PATH", t.TempDir())
+	if got := FindBinary("demo", []string{dir1, dir2}); got != execBin {
+		t.Fatalf("FindBinary() = %q, want executable %q", got, execBin)
+	}
+}

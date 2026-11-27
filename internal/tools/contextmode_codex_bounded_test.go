@@ -539,3 +539,90 @@ func TestCleanupLegacyAntigravityContextMode_DropsAllContextModeHooks(t *testing
 }
 
 func coreRunOptsForTest() core.RunOpts { return core.RunOpts{} }
+
+func TestCtxWireCodexPreservesUserContextModeMcpTables(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	project := filepath.Join(tmp, "project")
+	codexHome := filepath.Join(home, ".codex")
+	util.SetHomeOverride(home)
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", codexHome)
+	t.Cleanup(func() { util.SetHomeOverride("") })
+
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(project, ".codex"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldwd) })
+
+	globalWant := "# global codex config\n[mcp_servers.context-mode]\nurl = \"https://example.com/mcp\"\n"
+	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(globalWant), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wsWant := "# workspace codex config\n[mcp_servers.context-mode]\ncommand = \"/custom/bin/context-mode\"\nargs = [\"--custom\"]\n"
+	if err := os.WriteFile(filepath.Join(project, ".codex", "config.toml"), []byte(wsWant), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ok, err := ctxWireCodex(coreRunOptsForTest())
+	if err != nil {
+		t.Fatalf("ctxWireCodex returned unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatal("ctxWireCodex should report conflict (false) when global [mcp_servers.context-mode] is user-managed")
+	}
+
+	gotGlobal, err := os.ReadFile(filepath.Join(codexHome, "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotGlobal) != globalWant {
+		t.Fatalf("global codex config changed:\n--- got ---\n%s\n--- want ---\n%s", gotGlobal, globalWant)
+	}
+	gotWs, err := os.ReadFile(filepath.Join(project, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotWs) != wsWant {
+		t.Fatalf("workspace codex config changed:\n--- got ---\n%s\n--- want ---\n%s", gotWs, wsWant)
+	}
+
+	// Even when global config has no conflicting table, wiring must still preserve workspace custom context-mode.
+	if err := os.Remove(filepath.Join(codexHome, "config.toml")); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = ctxWireCodex(coreRunOptsForTest())
+	gotWs2, err := os.ReadFile(filepath.Join(project, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotWs2) != wsWant {
+		t.Fatalf("workspace codex custom config was removed during wire:\n--- got ---\n%s\n--- want ---\n%s", gotWs2, wsWant)
+	}
+
+	wsEnvWant := "# workspace codex config with env\n[mcp_servers.context-mode]\ncommand = \"context-mode\"\nenv = { PROFILE = \"team\" }\n"
+	if err := os.WriteFile(filepath.Join(project, ".codex", "config.toml"), []byte(wsEnvWant), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(codexHome, "config.toml")); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	_, _ = ctxWireCodex(coreRunOptsForTest())
+	gotWs3, err := os.ReadFile(filepath.Join(project, ".codex", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotWs3) != wsEnvWant {
+		t.Fatalf("workspace codex bare command with env was removed during wire:\n--- got ---\n%s\n--- want ---\n%s", gotWs3, wsEnvWant)
+	}
+}

@@ -349,8 +349,14 @@ func wireCodexManual() bool {
 	cx := util.CodexPathsResolved()
 	_ = util.EnsureDir(cx.Dir)
 	if raw, ok := util.ReadFileSafe(cx.Config); ok {
-		if next := util.RemoveBlock(raw, "mcp_servers.context-mode"); next != raw {
-			_ = util.WriteFile(cx.Config, next)
+		if util.HasBlock(raw, "mcp_servers.context-mode") {
+			if !util.IsToklessManagedTomlMcpBlock(raw, "mcp_servers.context-mode", "context-mode") {
+				util.L.Warn("Codex: [mcp_servers.context-mode] is user-managed; keeping existing config")
+				return false
+			}
+			if next := util.RemoveBlock(raw, "mcp_servers.context-mode"); next != raw {
+				_ = util.WriteFile(cx.Config, next)
+			}
 		}
 	}
 	if !mcpConfigure("codex", "context-mode") {
@@ -358,7 +364,7 @@ func wireCodexManual() bool {
 	}
 
 	cleanupCodexContextModeHooks()
-	cleanupWorkspaceCodexContextModeMcp(cx.Dir)
+	cleanupWorkspaceCodexContextModeMcp(cx.Dir, true)
 	writeCodexAgentsMd()
 
 	return mcpHas("codex", "context-mode", false)
@@ -388,9 +394,38 @@ func removeCodexContextModeHooks(existing *util.OrderedMap) *util.OrderedMap {
 			}
 		}
 		var filtered []any
-		for _, entry := range arr {
-			if !isOursForEvent(entry, event) {
-				filtered = append(filtered, entry)
+		for _, g := range arr {
+			gm, ok := g.(*util.OrderedMap)
+			if !ok || gm == nil {
+				filtered = append(filtered, g)
+				continue
+			}
+			hv, ok := gm.Get("hooks")
+			if !ok {
+				filtered = append(filtered, g)
+				continue
+			}
+			hooksArr, ok := hv.([]any)
+			if !ok {
+				filtered = append(filtered, g)
+				continue
+			}
+			if len(hooksArr) == 0 {
+				filtered = append(filtered, g)
+				continue
+			}
+			keptSub := make([]any, 0, len(hooksArr))
+			for _, sub := range hooksArr {
+				if isOursHookItem(sub, event) {
+					continue
+				}
+				keptSub = append(keptSub, sub)
+			}
+			if len(keptSub) > 0 {
+				if len(keptSub) != len(hooksArr) {
+					gm.Set("hooks", keptSub)
+				}
+				filtered = append(filtered, gm)
 			}
 		}
 		if len(filtered) == 0 {
@@ -418,7 +453,7 @@ func cleanupCodexContextModeHooks() {
 	}
 }
 
-func cleanupWorkspaceCodexContextModeMcp(activeCodexDir string) {
+func cleanupWorkspaceCodexContextModeMcp(activeCodexDir string, allowLegacyDirect bool) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return
@@ -432,11 +467,23 @@ func cleanupWorkspaceCodexContextModeMcp(activeCodexDir string) {
 	if !ok {
 		return
 	}
-	next := util.RemoveBlock(raw, "mcp_servers.context-mode")
-	next = util.RemoveBlock(next, "mcp_servers.context_mode")
+	allowDirect := ""
+	if allowLegacyDirect {
+		allowDirect = "context-mode"
+	}
+	next := raw
+	for _, header := range []string{"mcp_servers.context-mode", "mcp_servers.context_mode"} {
+		if util.IsToklessManagedTomlMcpBlock(next, header, allowDirect) {
+			next = util.RemoveBlock(next, header)
+		}
+	}
 	if next != raw {
 		_ = util.WriteFile(configPath, next)
 	}
+}
+
+var codexContextModeHookEvents = []string{
+	"PreToolUse", "PostToolUse", "UserPromptSubmit", "SessionStart", "PreCompact", "Stop", "PermissionRequest",
 }
 
 func cleanupCodexContextModeHooksInDir(dir string) {
@@ -444,15 +491,130 @@ func cleanupCodexContextModeHooksInDir(dir string) {
 	if !util.Exists(hooksPath) {
 		return
 	}
-	raw, _ := util.ReadFileSafe(hooksPath)
-	next := removeCodexContextModeHooks(loadOrdered(hooksPath))
-	if next.Len() == 0 {
-		_ = os.Remove(hooksPath)
+	raw, ok := util.ReadFileSafe(hooksPath)
+	if !ok {
 		return
 	}
-	if s := util.StringifyJSON(next); s != raw {
-		_ = util.WriteFile(hooksPath, s)
+	cfg := util.TryParseJsonc(raw)
+	if cfg == nil {
+		return
 	}
+	hv, ok := cfg.Get("hooks")
+	if !ok {
+		return
+	}
+	hm, ok := hv.(*util.OrderedMap)
+	if !ok || hm == nil {
+		return
+	}
+
+	next := raw
+	changed := false
+	for _, event := range codexContextModeHookEvents {
+		evVal, ok := hm.Get(event)
+		if !ok {
+			continue
+		}
+		arr, ok := evVal.([]any)
+		if !ok || len(arr) == 0 {
+			continue
+		}
+		removeGroups := map[int]bool{}
+		for gi := len(arr) - 1; gi >= 0; gi-- {
+			gm, ok := arr[gi].(*util.OrderedMap)
+			if !ok || gm == nil {
+				continue
+			}
+			subVal, ok := gm.Get("hooks")
+			if !ok {
+				continue
+			}
+			hooksArr, ok := subVal.([]any)
+			if !ok || len(hooksArr) == 0 {
+				continue
+			}
+			subRemove := map[int]bool{}
+			for si, sub := range hooksArr {
+				if isOursHookItem(sub, event) {
+					subRemove[si] = true
+				}
+			}
+			if len(subRemove) == 0 {
+				continue
+			}
+			if len(subRemove) >= len(hooksArr) {
+				removeGroups[gi] = true
+				continue
+			}
+			edited, deleted, err := util.DeleteJSONCSubArrayIndices(next, []string{"hooks", event}, gi, "hooks", subRemove)
+			if err != nil {
+				return
+			}
+			if deleted {
+				next = edited
+				changed = true
+			}
+		}
+		if len(removeGroups) > 0 {
+			edited, deleted, err := util.DeleteJSONCArrayIndices(next, []string{"hooks", event}, removeGroups)
+			if err != nil {
+				return
+			}
+			if deleted {
+				next = edited
+				changed = true
+			}
+			if len(removeGroups) == len(arr) && !util.JSONCObjectHasComments(next, []string{"hooks", event}) {
+				if trimmed, ok, derr := util.DeleteJSONCNestedKey(next, []string{"hooks", event}); derr != nil {
+					return
+				} else if ok {
+					next = trimmed
+					changed = true
+				}
+			}
+		}
+	}
+	if !changed || next == raw {
+		return
+	}
+	if parsed := util.TryParseJsonc(next); parsed != nil && !util.HasJSONCComments(next) {
+		if hooksOnlyEmpty(parsed) {
+			_ = os.Remove(hooksPath)
+			return
+		}
+	}
+	_ = util.WriteFile(hooksPath, next)
+}
+
+func hooksOnlyEmpty(cfg *util.OrderedMap) bool {
+	if cfg.Len() == 0 {
+		return true
+	}
+	if cfg.Len() != 1 {
+		return false
+	}
+	hv, ok := cfg.Get("hooks")
+	if !ok {
+		return false
+	}
+	hm, ok := hv.(*util.OrderedMap)
+	return ok && hm != nil && hm.Len() == 0
+}
+
+func isOursHookItem(h any, event string) bool {
+	hm, ok := h.(*util.OrderedMap)
+	if !ok || hm == nil {
+		return false
+	}
+	prefix := "context-mode hook codex " + strings.ToLower(event)
+	legacyPrefix := "tokless context-mode-hook codex " + strings.ToLower(event)
+	altPrefix := "tokless codex-sessionstart"
+	if cmd, ok := hm.Get("command"); ok {
+		if s, ok := cmd.(string); ok && (strings.HasPrefix(s, prefix) || strings.HasPrefix(s, legacyPrefix) || strings.HasPrefix(s, altPrefix)) {
+			return true
+		}
+	}
+	return false
 }
 
 func isOursForEvent(entry any, event string) bool {
@@ -468,18 +630,9 @@ func isOursForEvent(entry any, event string) bool {
 	if !ok {
 		return false
 	}
-	prefix := "context-mode hook codex " + strings.ToLower(event)
-	legacyPrefix := "tokless context-mode-hook codex " + strings.ToLower(event)
-	altPrefix := "tokless codex-sessionstart"
 	for _, h := range arr {
-		hm, ok := h.(*util.OrderedMap)
-		if !ok {
-			continue
-		}
-		if cmd, ok := hm.Get("command"); ok {
-			if s, ok := cmd.(string); ok && (strings.HasPrefix(s, prefix) || strings.HasPrefix(s, legacyPrefix) || strings.HasPrefix(s, altPrefix)) {
-				return true
-			}
+		if isOursHookItem(h, event) {
+			return true
 		}
 	}
 	return false
@@ -525,6 +678,7 @@ func ctxUnwireCodex(opts core.RunOpts) (bool, error) {
 	}
 	mcpRemove("codex", "context-mode")
 	cleanupCodexContextModeHooks()
+	cleanupWorkspaceCodexContextModeMcp(util.CodexPathsResolved().Dir, false)
 	RemoveOwner("codex", "context-mode")
 	return true, nil
 }

@@ -66,3 +66,25 @@ func TestCachedLatestServesFreshFromCacheWithoutFetch(t *testing.T) {
 		t.Fatalf("fresh read = %v, want 1.0.162 from cache", got)
 	}
 }
+
+func TestSemverComparePrereleaseAndBuildMetadata(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"1.2.0-beta.1", "1.2.0", -1},
+		{"1.2.0", "1.2.0-beta.1", 1},
+		{"1.2.0-alpha.1", "1.2.0-alpha.beta", -1},
+		{"1.2.0-alpha.2", "1.2.0-alpha.10", -1},
+		{"1.2.0-beta", "1.2.0-beta.1", -1},
+		{"1.2.0+build.1", "1.2.0+build.2", 0},
+		{"v1.2.0-rc.1+20261127", "1.2.0-rc.1+99", 0},
+		{"v1.2.0", "1.2.0", 0},
+	}
+	for _, tc := range cases {
+		a, b := tc.a, tc.b
+		if got := SemverCompare(&a, &b); got != tc.want {
+			t.Errorf("SemverCompare(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
+	}
+}

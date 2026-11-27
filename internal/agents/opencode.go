@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/HoangP8/tokless/internal/core"
 	"github.com/HoangP8/tokless/internal/util"
@@ -270,14 +271,29 @@ func removeOpenCodeMcp(toolID, path string, v2 bool) bool {
 	if !isMap || !openCodeMcpEntryCommandMatches(entry, command) {
 		return false
 	}
-	parent.Delete(toolID)
-	if v2 && parent.Len() == 0 {
-		mcp.Delete("servers")
+	keyPath := []string{"mcp", toolID}
+	if v2 {
+		keyPath = []string{"mcp", "servers", toolID}
 	}
-	if mcp.Len() == 0 {
-		cfg.Delete("mcp")
+	next, deleted, err := util.DeleteJSONCNestedKey(raw, keyPath)
+	if err != nil || !deleted {
+		return false
 	}
-	return util.WriteFile(path, util.StringifyJSON(cfg)) == nil
+	if v2 && parent.Len() == 1 && !util.JSONCObjectHasComments(next, []string{"mcp", "servers"}) {
+		if trimmed, ok, derr := util.DeleteJSONCNestedKey(next, []string{"mcp", "servers"}); derr == nil && ok {
+			next = trimmed
+		}
+		if mcp.Len() == 1 && !util.JSONCObjectHasComments(next, []string{"mcp"}) {
+			if trimmed, ok, derr := util.DeleteJSONCNestedKey(next, []string{"mcp"}); derr == nil && ok {
+				next = trimmed
+			}
+		}
+	} else if !v2 && mcp.Len() == 1 && !util.JSONCObjectHasComments(next, []string{"mcp"}) {
+		if trimmed, ok, derr := util.DeleteJSONCNestedKey(next, []string{"mcp"}); derr == nil && ok {
+			next = trimmed
+		}
+	}
+	return util.WriteFile(path, next) == nil
 }
 
 // --- OpenCode headroom HTTP proxy ---
@@ -1050,21 +1066,26 @@ func anyArrEq(a any, b []string) bool {
 	return true
 }
 
-func opencodeKnownBinDirs() []string {
+func openCodeFixedBinDirs() []string {
 	dirs := []string{
 		filepath.Join(util.Home(), ".opencode", "bin"),
 		filepath.Join(util.Home(), ".opencode2", "bin"),
+		filepath.Join(util.Home(), ".local", "bin"),
 	}
-	for _, name := range []string{"opencode", "opencode2"} {
-		if p := util.FindBinary(name, nil); p != "" {
-			dirs = append(dirs, filepath.Dir(p))
-		}
-	}
-	dirs = append(dirs, filepath.Join(util.Home(), ".local", "bin"))
 	if util.IsWin {
 		dirs = append(dirs, filepath.Join(util.Home(), "scoop", "shims"))
 		if pd := os.Getenv("ProgramData"); pd != "" {
 			dirs = append(dirs, filepath.Join(pd, "chocolatey", "bin"))
+		}
+	}
+	return dirs
+}
+
+func opencodeKnownBinDirs() []string {
+	dirs := openCodeFixedBinDirs()
+	for _, name := range []string{"opencode", "opencode2"} {
+		if p := util.Which(name); p != "" {
+			dirs = append(dirs, filepath.Dir(p))
 		}
 	}
 	return dirs
@@ -1091,12 +1112,12 @@ func OpenCodeMajorVersion(bin string) int {
 	return major
 }
 
-// openCodeBinaryPaths returns real binary candidates, including the v2 install path and PATH.
+// openCodeBinaryPaths returns existing binary candidates across fixed dirs and PATH.
 func openCodeBinaryPaths() []string {
 	var out []string
 	seen := map[string]bool{}
 	add := func(p string) {
-		if p != "" && !seen[p] {
+		if p != "" && !seen[p] && util.Exists(p) {
 			seen[p] = true
 			out = append(out, p)
 		}
@@ -1105,28 +1126,66 @@ func openCodeBinaryPaths() []string {
 	if util.IsWin {
 		names = []string{"opencode2.exe", "opencode.exe", "opencode2", "opencode"}
 	}
-	for _, dir := range opencodeKnownBinDirs() {
+	for _, dir := range openCodeFixedBinDirs() {
 		for _, name := range names {
 			add(filepath.Join(dir, name))
 		}
 	}
 	for _, name := range []string{"opencode2", "opencode"} {
-		add(util.FindBinary(name, nil))
+		add(util.Which(name))
 	}
 	return out
 }
 
+type openCodeDetectRoundState struct {
+	depth  int
+	ready  bool
+	majors []int
+}
+
+var (
+	openCodeDetectMu sync.Mutex
+	openCodeRound    openCodeDetectRoundState
+)
+
+// BeginOpenCodeDetectRound shares OpenCode PATH discovery and version probing within one agent detection round.
+func BeginOpenCodeDetectRound() func() {
+	openCodeDetectMu.Lock()
+	openCodeRound.depth++
+	openCodeDetectMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			openCodeDetectMu.Lock()
+			if openCodeRound.depth > 0 {
+				openCodeRound.depth--
+				if openCodeRound.depth == 0 {
+					openCodeRound.ready = false
+					openCodeRound.majors = nil
+				}
+			}
+			openCodeDetectMu.Unlock()
+		})
+	}
+}
+
 // OpenCodeInstalledMajor probes installed binaries and returns 0 if none reports a version.
 func OpenCodeInstalledMajor() int {
-	for _, bin := range openCodeBinaryPaths() {
-		if major := OpenCodeMajorVersion(bin); major != 0 {
-			return major
-		}
+	if majors := OpenCodeInstalledMajors(); len(majors) > 0 {
+		return majors[0]
 	}
 	return 0
 }
 
 func OpenCodeInstalledMajors() []int {
+	openCodeDetectMu.Lock()
+	defer openCodeDetectMu.Unlock()
+
+	if openCodeRound.depth > 0 && openCodeRound.ready {
+		return append([]int(nil), openCodeRound.majors...)
+	}
+
 	var majors []int
 	seen := map[int]bool{}
 	for _, bin := range openCodeBinaryPaths() {
@@ -1134,6 +1193,10 @@ func OpenCodeInstalledMajors() []int {
 			seen[major] = true
 			majors = append(majors, major)
 		}
+	}
+	if openCodeRound.depth > 0 {
+		openCodeRound.majors = append([]int(nil), majors...)
+		openCodeRound.ready = true
 	}
 	return majors
 }
@@ -1160,7 +1223,6 @@ var opencode = &core.AgentManifest{
 	CLIBin:    "opencode",
 	ConfigDir: func() string { return util.OpenCodePathsResolved().Dir },
 	Detect: func() core.Detection {
-		bins := opencodeKnownBinDirs()
 		majors := OpenCodeInstalledMajors()
 		if containsInt(majors, 1) {
 			return core.Detection{Installed: true, Source: "cli"}
@@ -1168,7 +1230,7 @@ var opencode = &core.AgentManifest{
 		if len(majors) > 0 {
 			return core.Detection{Installed: false, Source: ""}
 		}
-		return detectAgent("opencode", util.OpenCodePathsResolved().Dir, bins, opencodeDesktopPaths())
+		return detectAgent("opencode", util.OpenCodePathsResolved().Dir, openCodeFixedBinDirs(), opencodeDesktopPaths())
 	},
 }
 

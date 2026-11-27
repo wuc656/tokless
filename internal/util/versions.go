@@ -207,19 +207,8 @@ func githubLatestRelease(repo string) *string {
 var reSemver = regexp.MustCompile(`(\d+\.\d+\.\d+)`)
 
 func rtkInstalledVersion() *string {
-	p := ResolveRtkBin()
-	if p == "" {
-		return nil
-	}
-	r := Run(p, []string{"--version"}, RunOptions{Capture: true})
-	src := r.Stdout
-	if src == "" {
-		src = r.Stderr
-	}
-	if m := reSemver.FindStringSubmatch(src); m != nil {
-		return strp(m[1])
-	}
-	return nil
+	_, v := ResolveRtkBinAndVersion()
+	return v
 }
 
 var runNpmLs = func(npmBin, pkg string) ExecResult {
@@ -564,18 +553,75 @@ func cachedLatestFor(force bool, ids []string) map[string]*string {
 	return result
 }
 
-func parseSemverParts(s string) []int {
-	s = strings.TrimPrefix(s, "v")
-	parts := strings.Split(s, ".")
-	out := make([]int, len(parts))
-	for i, p := range parts {
-		n, _ := strconv.Atoi(p)
-		out[i] = n
-	}
-	return out
+type semver struct {
+	core []int
+	pre  []string
 }
 
-// SemverCompare returns -1/0/1 comparing two version strings.
+func parseSemver(s string) semver {
+	s = strings.TrimPrefix(s, "v")
+	if i := strings.IndexByte(s, '+'); i >= 0 {
+		s = s[:i]
+	}
+	coreStr, preStr, hasPre := strings.Cut(s, "-")
+	coreParts := strings.Split(coreStr, ".")
+	core := make([]int, len(coreParts))
+	for i, p := range coreParts {
+		n, _ := strconv.Atoi(p)
+		core[i] = n
+	}
+	var pre []string
+	if hasPre && preStr != "" {
+		pre = strings.Split(preStr, ".")
+	}
+	return semver{core: core, pre: pre}
+}
+
+func comparePrerelease(a, b []string) int {
+	switch {
+	case len(a) == 0 && len(b) == 0:
+		return 0
+	case len(a) == 0:
+		return 1
+	case len(b) == 0:
+		return -1
+	}
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] == b[i] {
+			continue
+		}
+		na, errA := strconv.Atoi(a[i])
+		nb, errB := strconv.Atoi(b[i])
+		switch {
+		case errA == nil && errB == nil:
+			if na > nb {
+				return 1
+			}
+			return -1
+		case errA == nil:
+			return -1 // numeric identifiers always have lower precedence than non-numeric
+		case errB == nil:
+			return 1
+		case a[i] > b[i]:
+			return 1
+		default:
+			return -1
+		}
+	}
+	if len(a) > len(b) {
+		return 1
+	}
+	if len(a) < len(b) {
+		return -1
+	}
+	return 0
+}
+
+// SemverCompare returns -1/0/1 comparing two SemVer 2.0.0 version strings.
 func SemverCompare(a, b *string) int {
 	if a == nil && b == nil {
 		return 0
@@ -586,18 +632,18 @@ func SemverCompare(a, b *string) int {
 	if b == nil {
 		return 1
 	}
-	pa, pb := parseSemverParts(*a), parseSemverParts(*b)
-	n := len(pa)
-	if len(pb) > n {
-		n = len(pb)
+	va, vb := parseSemver(*a), parseSemver(*b)
+	n := len(va.core)
+	if len(vb.core) > n {
+		n = len(vb.core)
 	}
 	for i := 0; i < n; i++ {
 		da, db := 0, 0
-		if i < len(pa) {
-			da = pa[i]
+		if i < len(va.core) {
+			da = va.core[i]
 		}
-		if i < len(pb) {
-			db = pb[i]
+		if i < len(vb.core) {
+			db = vb.core[i]
 		}
 		if da != db {
 			if da > db {
@@ -606,7 +652,7 @@ func SemverCompare(a, b *string) int {
 			return -1
 		}
 	}
-	return 0
+	return comparePrerelease(va.pre, vb.pre)
 }
 
 func SemverGte(a, b string) bool { return SemverCompare(&a, &b) >= 0 }

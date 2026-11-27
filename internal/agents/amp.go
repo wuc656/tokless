@@ -37,6 +37,9 @@ func updateAmpRtkPermissions(remove bool, commands []string, commandListAvailabl
 	}
 	const permissionsKey = "amp.permissions"
 	value, exists := cfg.Get(permissionsKey)
+	if remove && !exists {
+		return false
+	}
 	permissions, ok := value.([]any)
 	if exists && !ok {
 		return false
@@ -75,7 +78,7 @@ func updateAmpRtkPermissions(remove bool, commands []string, commandListAvailabl
 	}
 	next := append(front, kept...)
 	changed := !ampPermissionsEqual(permissions, next)
-	if changed || !exists {
+	if changed || (!remove && !exists) {
 		cfg.Set(permissionsKey, next)
 		if util.WriteFile(f, util.StringifyJSON(cfg)) != nil {
 			return false

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -86,6 +87,23 @@ func runCmd(c *exec.Cmd, ctx context.Context) error {
 	}
 }
 
+func isExecutableFile(fi os.FileInfo) bool {
+	if fi == nil || fi.IsDir() {
+		return false
+	}
+	if runtime.GOOS != "windows" && fi.Mode().Perm()&0o111 == 0 {
+		return false
+	}
+	return true
+}
+
+func executableNames(bin string) []string {
+	if IsWin {
+		return []string{bin + ".exe", bin + ".cmd", bin + ".bat", bin}
+	}
+	return []string{bin}
+}
+
 // Which finds an executable on PATH, honoring PATHEXT on Windows.
 func Which(bin string) string {
 	pathEnv := os.Getenv("PATH")
@@ -115,7 +133,7 @@ func Which(bin string) string {
 		}
 		for _, ext := range exts {
 			p := filepath.Join(dir, bin+ext)
-			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			if fi, err := os.Stat(p); err == nil && isExecutableFile(fi) {
 				return p
 			}
 		}
@@ -127,17 +145,14 @@ func FindBinary(bin string, extraDirs []string) string {
 	if p := Which(bin); p != "" {
 		return p
 	}
-	names := []string{bin}
-	if IsWin {
-		names = []string{bin + ".exe", bin + ".cmd", bin + ".bat", bin}
-	}
+	names := executableNames(bin)
 	for _, dir := range extraDirs {
 		if dir == "" {
 			continue
 		}
 		for _, n := range names {
 			p := filepath.Join(dir, n)
-			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			if fi, err := os.Stat(p); err == nil && isExecutableFile(fi) {
 				PrependProcessPath(dir)
 				return p
 			}
@@ -186,35 +201,70 @@ func RtkInstallDirs() []string {
 	return dirs
 }
 
+func probeRtkHealthyVersion(p string) (bool, string) {
+	r := Run(p, []string{"--version"}, RunOptions{Capture: true})
+	return r.Code == 0 && strings.Contains(r.Stdout, "."), r.Stdout
+}
+
 // BinaryHealthy probes --version for a dot — rejects shims and 0-byte files.
 func BinaryHealthy(p string) bool {
-	r := Run(p, []string{"--version"}, RunOptions{Capture: true})
-	return r.Code == 0 && strings.Contains(r.Stdout, ".")
+	ok, _ := probeRtkHealthyVersion(p)
+	return ok
 }
 
 // ResolveRtkBin finds a working rtk binary, surviving PATH drift.
 func ResolveRtkBin() string {
+	p, _ := resolveRtkBinAndVersion(true)
+	return p
+}
+
+// ResolveRtkBinAndVersion finds a working rtk binary and extracts its semver
+// from the single --version probe.
+func ResolveRtkBinAndVersion() (string, *string) {
+	return resolveRtkBinAndVersion(true)
+}
+
+// ResolveExistingRtkBin returns any rtk binary on PATH or RtkInstallDirs even if
+// unhealthy, so purge/remove can clean up broken installs without mutating PATH.
+func ResolveExistingRtkBin() string {
+	p, _ := resolveRtkBinAndVersion(false)
+	return p
+}
+
+func resolveRtkBinAndVersion(requireHealthy bool) (string, *string) {
+	extractVer := func(stdout string) *string {
+		if m := reSemver.FindStringSubmatch(stdout); m != nil {
+			return strp(m[1])
+		}
+		return nil
+	}
 	if p := Which("rtk"); p != "" {
-		if BinaryHealthy(p) {
-			return p
+		if !requireHealthy {
+			return p, nil
+		}
+		if ok, out := probeRtkHealthyVersion(p); ok {
+			return p, extractVer(out)
 		}
 	}
-	sep := ":"
-	if IsWin {
-		sep = ";"
-	}
-	cur := os.Getenv("PATH")
-	prefix := ""
+	names := executableNames("rtk")
 	for _, d := range RtkInstallDirs() {
 		if d == "" {
 			continue
 		}
-		prefix += d + sep
+		for _, n := range names {
+			p := filepath.Join(d, n)
+			if fi, err := os.Stat(p); err == nil && isExecutableFile(fi) {
+				if !requireHealthy {
+					return p, nil
+				}
+				if ok, out := probeRtkHealthyVersion(p); ok {
+					PrependProcessPath(d)
+					return p, extractVer(out)
+				}
+			}
+		}
 	}
-	if prefix != "" {
-		os.Setenv("PATH", prefix+cur)
-	}
-	return Which("rtk")
+	return "", nil
 }
 
 // nodeBinCandidates returns well-known node bin dirs across version managers.

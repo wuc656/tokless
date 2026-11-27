@@ -681,3 +681,259 @@ func DeleteJSONCTopLevelKey(raw, key string) (string, bool, error) {
 	}
 	return out, true, nil
 }
+
+func locateJSONCPath(s string, path []string) (start, end int, found bool, err error) {
+	curStart, curEnd := 0, len(s)
+	for _, seg := range path {
+		sub := s[curStart:curEnd]
+		i, err := skipJSONCTrivia(sub, 0)
+		if err != nil || i >= len(sub) || sub[i] != '{' {
+			return 0, 0, false, nil
+		}
+		_, _, props, err := scanTopLevelJSONCProps(sub)
+		if err != nil {
+			return 0, 0, false, err
+		}
+		matched := false
+		for _, p := range props {
+			if p.key == seg {
+				curStart, curEnd = curStart+p.valStart, curStart+p.valEnd
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return 0, 0, false, nil
+		}
+	}
+	return curStart, curEnd, true, nil
+}
+
+// JSONCObjectHasComments reports whether the JSONC value at path exists and contains comments.
+func JSONCObjectHasComments(raw string, path []string) bool {
+	s := NormalizeJSONText(raw)
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	start, end, found, err := locateJSONCPath(s, path)
+	if err != nil || !found {
+		return false
+	}
+	return HasJSONCComments(s[start:end])
+}
+
+// DeleteJSONCNestedKey removes a key at path (e.g. ["mcp", "servers", "codegraph"]) from
+// JSON/JSONC text while preserving unrelated comments and formatting.
+func DeleteJSONCNestedKey(raw string, path []string) (string, bool, error) {
+	if len(path) == 0 {
+		return raw, false, nil
+	}
+	if len(path) == 1 {
+		return DeleteJSONCTopLevelKey(raw, path[0])
+	}
+	s := NormalizeJSONText(raw)
+	if strings.TrimSpace(s) == "" {
+		return raw, false, nil
+	}
+
+	curStart, curEnd, found, err := locateJSONCPath(s, path[:len(path)-1])
+	if err != nil || !found {
+		return raw, false, err
+	}
+
+	edited, deleted, err := DeleteJSONCTopLevelKey(s[curStart:curEnd], path[len(path)-1])
+	if err != nil {
+		return "", false, err
+	}
+	if !deleted {
+		return raw, false, nil
+	}
+
+	out := s[:curStart] + edited + s[curEnd:]
+	if _, perr := ParseJsonc(out); perr != nil {
+		return "", false, perr
+	}
+	return out, true, nil
+}
+
+type jsoncArrElem struct {
+	valStart int
+	valEnd   int
+	commaIdx int
+}
+
+func scanJSONCArrayElems(s string) ([]jsoncArrElem, error) {
+	i, err := skipJSONCTrivia(s, 0)
+	if err != nil {
+		return nil, err
+	}
+	if i >= len(s) || s[i] != '[' {
+		return nil, fmt.Errorf("expected JSON array")
+	}
+	i++
+
+	var elems []jsoncArrElem
+	closeBracket := -1
+	for {
+		i, err = skipJSONCTrivia(s, i)
+		if err != nil {
+			return nil, err
+		}
+		if i >= len(s) {
+			return nil, fmt.Errorf("unterminated JSON array")
+		}
+		if s[i] == ']' {
+			closeBracket = i
+			break
+		}
+		valStart := i
+		valEnd, err := scanJSONCValueEnd(s, valStart)
+		if err != nil {
+			return nil, err
+		}
+		afterVal, err := skipJSONCTrivia(s, valEnd)
+		if err != nil {
+			return nil, err
+		}
+		if afterVal >= len(s) {
+			return nil, fmt.Errorf("unexpected EOF in JSON array")
+		}
+		commaIdx := -1
+		switch s[afterVal] {
+		case ',':
+			commaIdx = afterVal
+			i = afterVal + 1
+		case ']':
+			i = afterVal
+		default:
+			return nil, fmt.Errorf("expected ',' or ']' in JSON array")
+		}
+		elems = append(elems, jsoncArrElem{
+			valStart: valStart,
+			valEnd:   valEnd,
+			commaIdx: commaIdx,
+		})
+	}
+	tail, err := skipJSONCTrivia(s, closeBracket+1)
+	if err != nil {
+		return nil, err
+	}
+	if tail != len(s) {
+		return nil, fmt.Errorf("unexpected trailing content after JSON array")
+	}
+	return elems, nil
+}
+
+func deleteJSONCArrayIndicesInSlice(arrSlice string, removeIdx map[int]bool) (string, bool, error) {
+	elems, err := scanJSONCArrayElems(arrSlice)
+	if err != nil {
+		return "", false, err
+	}
+	lastKept := -1
+	for i := len(elems) - 1; i >= 0; i-- {
+		if !removeIdx[i] {
+			lastKept = i
+			break
+		}
+	}
+	out := arrSlice
+	deleted := false
+	for i := len(elems) - 1; i >= 0; i-- {
+		if !removeIdx[i] {
+			if deleted && i == lastKept && elems[i].commaIdx >= 0 && elems[len(elems)-1].commaIdx < 0 {
+				out = out[:elems[i].commaIdx] + out[elems[i].commaIdx+1:]
+			}
+			continue
+		}
+		deleted = true
+		el := elems[i]
+		endPos := el.valEnd
+		if el.commaIdx >= 0 {
+			endPos = el.commaIdx + 1
+		}
+		_, lineStart, soleOnLeft := lineIndentAt(out, el.valStart)
+		tailPos, soleOnRight := lineTailIfOwnProperty(out, endPos)
+
+		delStart, delEnd := el.valStart, endPos
+		if soleOnLeft && soleOnRight {
+			delStart = lineStart
+			delEnd = tailPos
+		} else if !soleOnLeft {
+			for delStart > 0 && out[delStart-1] == ' ' {
+				delStart--
+			}
+		}
+		out = out[:delStart] + out[delEnd:]
+	}
+	return out, deleted, nil
+}
+
+// DeleteJSONCArrayIndices deletes elements at removeIdx from the JSON array at path while
+// preserving surrounding comments and formatting.
+func DeleteJSONCArrayIndices(raw string, path []string, removeIdx map[int]bool) (string, bool, error) {
+	if len(removeIdx) == 0 {
+		return raw, false, nil
+	}
+	s := NormalizeJSONText(raw)
+	if strings.TrimSpace(s) == "" {
+		return raw, false, nil
+	}
+	start, end, found, err := locateJSONCPath(s, path)
+	if err != nil || !found {
+		return raw, false, err
+	}
+	i, err := skipJSONCTrivia(s[start:end], 0)
+	if err != nil || start+i >= end || s[start+i] != '[' {
+		return raw, false, nil
+	}
+
+	edited, deleted, err := deleteJSONCArrayIndicesInSlice(s[start:end], removeIdx)
+	if err != nil || !deleted {
+		return raw, false, err
+	}
+	out := s[:start] + edited + s[end:]
+	if _, perr := ParseJsonc(out); perr != nil {
+		return "", false, perr
+	}
+	return out, true, nil
+}
+
+// DeleteJSONCSubArrayIndices deletes elements at removeIdx from subKey inside element elemIdx
+// of the JSON array at arrPath while preserving surrounding comments and formatting.
+func DeleteJSONCSubArrayIndices(raw string, arrPath []string, elemIdx int, subKey string, removeIdx map[int]bool) (string, bool, error) {
+	if len(removeIdx) == 0 || elemIdx < 0 {
+		return raw, false, nil
+	}
+	s := NormalizeJSONText(raw)
+	if strings.TrimSpace(s) == "" {
+		return raw, false, nil
+	}
+	arrStart, arrEnd, found, err := locateJSONCPath(s, arrPath)
+	if err != nil || !found {
+		return raw, false, err
+	}
+	arrSlice := s[arrStart:arrEnd]
+	i, err := skipJSONCTrivia(arrSlice, 0)
+	if err != nil || i >= len(arrSlice) || arrSlice[i] != '[' {
+		return raw, false, nil
+	}
+	elems, err := scanJSONCArrayElems(arrSlice)
+	if err != nil {
+		return "", false, err
+	}
+	if elemIdx >= len(elems) {
+		return raw, false, nil
+	}
+
+	elStart := arrStart + elems[elemIdx].valStart
+	elEnd := arrStart + elems[elemIdx].valEnd
+	edited, deleted, err := DeleteJSONCArrayIndices(s[elStart:elEnd], []string{subKey}, removeIdx)
+	if err != nil || !deleted {
+		return raw, false, err
+	}
+	out := s[:elStart] + edited + s[elEnd:]
+	if _, perr := ParseJsonc(out); perr != nil {
+		return "", false, perr
+	}
+	return out, true, nil
+}

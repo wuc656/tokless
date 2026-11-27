@@ -433,3 +433,97 @@ func TestVerifySHA256(t *testing.T) {
 		t.Fatal("want checksum mismatch")
 	}
 }
+
+func TestToklessReleaseAssetForExe(t *testing.T) {
+	assetMain, ok := toklessReleaseAssetForExe(filepath.Join(t.TempDir(), "tokless.exe"))
+	if !ok {
+		t.Fatal("unsupported test platform")
+	}
+	assetGui, ok := toklessReleaseAssetForExe(filepath.Join(t.TempDir(), "TOKLESSW.EXE"))
+	if !ok {
+		t.Fatal("unsupported test platform")
+	}
+	if runtime.GOOS == "windows" && runtime.GOARCH == "amd64" {
+		if assetMain != "tokless-windows-x64.exe" {
+			t.Fatalf("main asset = %q, want tokless-windows-x64.exe", assetMain)
+		}
+		if assetGui != "toklessw-windows-x64.exe" {
+			t.Fatalf("gui asset = %q, want toklessw-windows-x64.exe", assetGui)
+		}
+	}
+}
+
+func TestTempDownloadPathAndSelfUpdateLock(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "tokless.exe")
+	p1, err := tempDownloadPath(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(p1)
+	p2, err := tempDownloadPath(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(p2)
+	if p1 == p2 {
+		t.Fatalf("expected unique temp paths, got %q twice", p1)
+	}
+
+	unlock, err := acquireSelfUpdateLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acquireSelfUpdateLock(dir); err == nil {
+		t.Fatal("second concurrent self-update lock should fail")
+	}
+	unlock()
+
+	unlock2, err := acquireSelfUpdateLock(dir)
+	if err != nil {
+		t.Fatalf("lock should be re-acquirable after unlock: %v", err)
+	}
+	unlock2()
+}
+
+func TestHasOldPrefixIgnoresUserNotesAndKeepsBackups(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "tokless.exe")
+	notes := exe + ".old-notes.txt"
+	if err := os.WriteFile(notes, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := restorePrevious(exe); err == nil {
+		t.Fatal("restorePrevious should not pick tokless.exe.old-notes.txt")
+	}
+	if got, err := os.ReadFile(notes); err != nil || string(got) != "keep" {
+		t.Fatalf("notes file was modified or removed during restorePrevious: %q, %v", got, err)
+	}
+
+	if err := os.WriteFile(exe+".old", []byte("old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe+".old.1234", []byte("oldpid"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	removeOldBinaries(exe)
+	if _, err := os.Stat(exe + ".old"); !os.IsNotExist(err) {
+		t.Fatalf("expected .old backup to be removed, stat err=%v", err)
+	}
+	if _, err := os.Stat(exe + ".old.1234"); !os.IsNotExist(err) {
+		t.Fatalf("expected .old.1234 backup to be removed, stat err=%v", err)
+	}
+	if got, err := os.ReadFile(notes); err != nil || string(got) != "keep" {
+		t.Fatalf("removeOldBinaries removed or altered user notes: %q, %v", got, err)
+	}
+
+	if err := os.WriteFile(exe+".old.5678", []byte("restored"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := restorePrevious(exe); err != nil {
+		t.Fatalf("restorePrevious with .old.<pid> failed: %v", err)
+	}
+	if got, err := os.ReadFile(exe); err != nil || string(got) != "restored" {
+		t.Fatalf("restored %q, err %v", got, err)
+	}
+}

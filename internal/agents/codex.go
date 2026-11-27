@@ -1442,6 +1442,62 @@ func InstallCodexRtkHook() bool {
 }
 
 // RemoveCodexRtkHook removes the rtk group from hooks.json and its trust entry.
+func codexGroupHookCounts(groups []any) []int {
+	counts := make([]int, len(groups))
+	for i, g := range groups {
+		if gm, ok := g.(*util.OrderedMap); ok && gm != nil {
+			if hv, ok := gm.Get("hooks"); ok {
+				if ha, ok := hv.([]any); ok {
+					counts[i] = len(ha)
+				}
+			}
+		}
+	}
+	return counts
+}
+
+func codexDeleteRemovedHooksJSONC(raw, event string, origCounts []int, removed []codexHookPos) (string, bool) {
+	if len(removed) == 0 {
+		return raw, false
+	}
+	byGroup := map[int]map[int]bool{}
+	for _, pos := range removed {
+		if byGroup[pos.group] == nil {
+			byGroup[pos.group] = map[int]bool{}
+		}
+		byGroup[pos.group][pos.hook] = true
+	}
+	removeGroups := map[int]bool{}
+	next := raw
+	for gi := len(origCounts) - 1; gi >= 0; gi-- {
+		subRemove := byGroup[gi]
+		if len(subRemove) == 0 {
+			continue
+		}
+		if origCounts[gi] > 0 && len(subRemove) >= origCounts[gi] {
+			removeGroups[gi] = true
+			continue
+		}
+		edited, ok, err := util.DeleteJSONCSubArrayIndices(next, []string{"hooks", event}, gi, "hooks", subRemove)
+		if err != nil {
+			return raw, false
+		}
+		if ok {
+			next = edited
+		}
+	}
+	if len(removeGroups) > 0 {
+		edited, ok, err := util.DeleteJSONCArrayIndices(next, []string{"hooks", event}, removeGroups)
+		if err != nil {
+			return raw, false
+		}
+		if ok {
+			next = edited
+		}
+	}
+	return next, next != raw
+}
+
 func RemoveCodexRtkHook() {
 	p := util.CodexPathsResolved()
 	hooksFile := codexHooksFile()
@@ -1451,10 +1507,10 @@ func RemoveCodexRtkHook() {
 			if hooks, ok := mapChild(cfg, "hooks"); ok {
 				if v, ok := hooks.Get("PreToolUse"); ok {
 					if preArr, ok := v.([]interface{}); ok {
-						kept, _, moved, removed := codexTransformManagedGroups(preArr, codexHookMatcher, []string{"rtk-hook", "codex"}, nil)
-						if len(removed) > 0 {
-							hooks.Set("PreToolUse", kept)
-							_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+						origCounts := codexGroupHookCounts(preArr)
+						_, _, moved, removed := codexTransformManagedGroups(preArr, codexHookMatcher, []string{"rtk-hook", "codex"}, nil)
+						if edited, wrote := codexDeleteRemovedHooksJSONC(raw, "PreToolUse", origCounts, removed); wrote {
+							_ = util.WriteFile(hooksFile, edited)
 							craw, _ := util.ReadFileSafe(p.Config)
 							cnext := codexRewriteHookState(craw, hooksFile, "pre_tool_use", moved, removed)
 							if cnext != craw {
@@ -1568,10 +1624,10 @@ func RemoveCodexPermissionHook() {
 			if hooks, ok := mapChild(cfg, "hooks"); ok {
 				if v, ok := hooks.Get("PermissionRequest"); ok {
 					if permArr, ok := v.([]interface{}); ok {
-						kept, _, moved, removed := codexTransformManagedGroups(permArr, codexPermHookMatcher, []string{"codex-perm", "codex"}, nil)
-						if len(removed) > 0 {
-							hooks.Set("PermissionRequest", kept)
-							_ = util.WriteFile(hooksFile, util.StringifyJSON(cfg))
+						origCounts := codexGroupHookCounts(permArr)
+						_, _, moved, removed := codexTransformManagedGroups(permArr, codexPermHookMatcher, []string{"codex-perm", "codex"}, nil)
+						if edited, wrote := codexDeleteRemovedHooksJSONC(raw, "PermissionRequest", origCounts, removed); wrote {
+							_ = util.WriteFile(hooksFile, edited)
 							craw, _ := util.ReadFileSafe(p.Config)
 							cnext := codexRewriteHookState(craw, hooksFile, "permission_request", moved, removed)
 							if cnext != craw {

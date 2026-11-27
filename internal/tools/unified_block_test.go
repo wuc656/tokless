@@ -260,3 +260,49 @@ func TestAllSevenToolsRegisteredWithoutProjectmem(t *testing.T) {
 		t.Fatal("projectmem should not be registered")
 	}
 }
+
+func TestWriteOwnerDeduplicatesBomAndDuplicatePreamble(t *testing.T) {
+	setupHome(t)
+
+	for _, tc := range []struct {
+		name string
+		seed string
+	}{
+		{
+			name: "bom-prefixed v1.0.42 preamble",
+			seed: "\uFEFF# Agent Instructions\n\nApply on every coding task:\n\n**Tools (call):**\n- Code Index (codegraph) — MCP codegraph_explore for structure, flows, dependencies.\n- Context Tools (context-mode) — MCP ctx_* for large, uncertain, multi-source analysis.\n\n## Code Index (codegraph)\n- old body\n\n## Context Tools (context-mode)\n- old ctx\n",
+		},
+		{
+			name: "already duplicated # Agent Instructions preamble",
+			seed: "# Agent Instructions\n\nApply on every coding task:\n\n**Tools (call):**\n- Code Index (codegraph) — MCP codegraph_explore for structure, flows, dependencies.\n- Context Tools (context-mode) — MCP ctx_* for large, uncertain, multi-source analysis.\n\n" + util.ToklessAgentBody(util.ToklessOwners) + "\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupHome(t)
+			path := agentInstructionPath(t, "antigravity")
+			_ = util.EnsureDir(filepath.Dir(path))
+			if err := os.WriteFile(path, []byte(tc.seed), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			for _, owner := range util.ToklessOwners {
+				WriteOwner("antigravity", owner)
+			}
+
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(raw)
+			if strings.HasPrefix(body, "\uFEFF") {
+				t.Fatalf("BOM remained in %s", path)
+			}
+			if got := strings.Count(body, "# Agent Instructions"); got != 1 {
+				t.Fatalf("expected 1 # Agent Instructions heading, got %d:\n%s", got, body)
+			}
+			if strings.Contains(body, "Apply on every coding task:") {
+				t.Fatalf("stale preamble remained:\n%s", body)
+			}
+		})
+	}
+}

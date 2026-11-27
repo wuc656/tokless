@@ -143,9 +143,9 @@ func TestResyncInstructionWiringUpgradesFromV1_0_42(t *testing.T) {
 			t.Fatalf("stale v1.0.42 template text remained:\n%s", raw)
 		}
 		for _, want := range []string{
-			"## Surgical Coding (principles)",
-			"## Terse Output (caveman)",
-			"## Minimal Diff (ponytail)",
+			"## Surgical Coding",
+			"## Terse Output",
+			"## Minimal Diff",
 			"## Code Index (codegraph)",
 			"## Context Tools (context-mode)",
 		} {
@@ -174,9 +174,9 @@ func TestResyncInstructionWiringUpgradesFromV1_0_42(t *testing.T) {
 			t.Fatalf("selected codegraph section was not refreshed:\n%s", raw)
 		}
 		for _, unwanted := range []string{
-			"## Surgical Coding (principles)",
-			"## Terse Output (caveman)",
-			"## Minimal Diff (ponytail)",
+			"## Surgical Coding",
+			"## Terse Output",
+			"## Minimal Diff",
 		} {
 			if strings.Contains(raw, unwanted) {
 				t.Fatalf("unselected section %q was added:\n%s", unwanted, raw)

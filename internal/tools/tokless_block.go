@@ -101,6 +101,7 @@ func ConfigureInstructionConflicts(autoAppend bool) {
 }
 
 func stripLegacy(raw string) string {
+	raw = strings.TrimPrefix(raw, "\uFEFF")
 	for _, f := range legacyFences {
 		if f[1] == "" {
 			for {
@@ -315,7 +316,7 @@ func writeOwnerInPath(path, cur, owner string) bool {
 	head, blocks, tail := fileParts(cleaned)
 	head = stripIndexPreamble(head)
 	owners := ownersFromBlocks(blocks)
-	if len(owners) == 0 && strings.TrimSpace(cleaned) != "" {
+	if len(owners) == 0 && strings.TrimSpace(strings.Join(head, "\n")) != "" {
 		switch instructionConflictChoice(path) {
 		case "skip":
 			return false
@@ -328,11 +329,11 @@ func writeOwnerInPath(path, cur, owner string) bool {
 	if containsOwner(owners, owner) {
 		sortOwnersByRegistry(owners)
 		want := strings.TrimRight(util.ToklessAgentBody(owners), "\n")
-		current := joinManagedBlocks(blocks)
-		if current == want {
+		rendered := joinFile(head, want, tail)
+		if rendered == strings.ReplaceAll(cur, "\r\n", "\n") {
 			return false
 		}
-		return write(joinFile(head, want, tail)) == nil
+		return write(rendered) == nil
 	}
 	owners = append(owners, owner)
 	sortOwnersByRegistry(owners)
@@ -357,18 +358,6 @@ func instructionConflictChoice(path string) string {
 		return "overwrite"
 	}
 	return "append"
-}
-
-// joinManagedBlocks reconstructs the rendered text of existing managed blocks.
-func joinManagedBlocks(blocks []managedSection) string {
-	var b strings.Builder
-	for i, blk := range blocks {
-		if i > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(strings.Join(blk.lines, "\n"))
-	}
-	return b.String()
 }
 
 func sortOwnersByRegistry(owners []string) {
@@ -432,7 +421,7 @@ func agentPathIsCopilotProject(path string) bool {
 // stripIndexPreamble drops overview when last owner is removed.
 func stripIndexPreamble(head []string) []string {
 	for i, line := range head {
-		trimmed := strings.TrimSpace(line)
+		trimmed := strings.TrimSpace(strings.TrimPrefix(line, "\uFEFF"))
 		if (trimmed == "# Agent Instructions" || trimmed == "# Agent Operating System" || trimmed == "## Index" || trimmed == "## Index →") && (isToklessIndexPreamble(head[i:]) || isOnlyToklessHeader(head[i:])) {
 			return head[:i]
 		}

@@ -19,9 +19,9 @@ var ToklessOwners = []string{
 
 // SectionsByOwner maps each owner to its heading marker.
 var SectionsByOwner = map[string]string{
-	"principles":   "## Surgical Coding (principles)",
-	"caveman":      "## Terse Output (caveman)",
-	"ponytail":     "## Minimal Diff (ponytail)",
+	"principles":   "## Surgical Coding",
+	"caveman":      "## Terse Output",
+	"ponytail":     "## Minimal Diff",
 	"codegraph":    "## Code Index (codegraph)",
 	"context-mode": "## Context Tools (context-mode)",
 }
@@ -53,8 +53,13 @@ func CursorProjectRuleSpecs() []CursorProjectRuleSpec {
 
 // IsToklessCursorRuleContent reports whether raw matches a Tokless-managed Cursor rule file.
 func IsToklessCursorRuleContent(raw string, spec CursorProjectRuleSpec) bool {
-	prefix := "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n" + SectionsByOwner[spec.Owner]
-	return strings.HasPrefix(raw, prefix)
+	header := "---\ndescription: " + spec.Description + "\nalwaysApply: true\n---\n"
+	for _, marker := range SectionMarkers(spec.Owner) {
+		if strings.HasPrefix(raw, header+marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // InstallCursorProjectRules installs or updates Tokless-managed Cursor rules in workspace,
@@ -99,9 +104,9 @@ func InstallCursorProjectRules(workspace string, dryRun bool) (bool, error) {
 }
 
 var legacySectionsByOwner = map[string][]string{
-	"principles":   {"## 1. Principles", "## Principles", "## Principles (craft)"},
-	"caveman":      {"## 2. Response Style", "## Response Style (caveman)", "## Voice (caveman)"},
-	"ponytail":     {"## 3. Build Discipline", "## Build Discipline (ponytail)", "## Reuse Ladder (ponytail)", "## Lazy Ladder (ponytail)"},
+	"principles":   {"## Surgical Coding (principles)", "## 1. Principles", "## Principles", "## Principles (craft)"},
+	"caveman":      {"## Terse Output (caveman)", "## 2. Response Style", "## Response Style (caveman)", "## Voice (caveman)"},
+	"ponytail":     {"## Minimal Diff (ponytail)", "## 3. Build Discipline", "## Build Discipline (ponytail)", "## Reuse Ladder (ponytail)", "## Lazy Ladder (ponytail)"},
 	"codegraph":    {"## 4. Code Search", "## Codegraph", "## Code Index (codegraph)"},
 	"context-mode": {"## 5. Context Control", "## Context Tools", "## Context Tools (context-mode)"},
 }

@@ -10,9 +10,9 @@ func TestAgentInstructionsContent(t *testing.T) {
 	body := ToklessAgentBody(owners)
 
 	for _, section := range []string{
-		"## Surgical Coding (principles)",
-		"## Terse Output (caveman)",
-		"## Minimal Diff (ponytail)",
+		"## Surgical Coding",
+		"## Terse Output",
+		"## Minimal Diff",
 		"## Code Index (codegraph)",
 		"## Context Tools (context-mode)",
 	} {
@@ -63,9 +63,9 @@ func TestPerOwnerRendering(t *testing.T) {
 		marker  string
 		example string
 	}{
-		{"principles", "## Surgical Coding (principles)", "Never create unrequested test files"},
-		{"caveman", "## Terse Output (caveman)", "Compress user-facing prose only"},
-		{"ponytail", "## Minimal Diff (ponytail)", "Prefer existing project helpers"},
+		{"principles", "## Surgical Coding", "Never create unrequested test files"},
+		{"caveman", "## Terse Output", "Compress user-facing prose only"},
+		{"ponytail", "## Minimal Diff", "Prefer existing project helpers"},
 		{"codegraph", "## Code Index (codegraph)", "codegraph_explore"},
 		{"context-mode", "## Context Tools (context-mode)", "ctx_execute"},
 	} {

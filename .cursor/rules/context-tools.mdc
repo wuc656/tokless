@@ -5,4 +5,4 @@ alwaysApply: true
 ## Context Tools (context-mode)
 
 - Use host tools for edits, Git writes, small reads, and short commands (sandbox writes do not persist on host).
-- Use `ctx_execute` (`file` param for large files/logs), `ctx_batch` (multi-command + search), `ctx_index`, and `ctx_search` whenever raw output would flood context; print only the distilled answer. Windows shell: `pwsh -NoProfile -Command`.
+- Use `ctx_execute` (`file` param for large files/logs), `ctx_batch` (multi-command + search), `ctx_index`, and `ctx_search` whenever raw output would flood context; print only the distilled answer. If unavailable, fall back to host tools with bounded output. Windows shell: `pwsh -NoProfile -Command` (or `powershell`).
